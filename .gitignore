@@ -5,3 +5,5 @@ node_modules/
 .next/
 __pycache__/
 *.db
+.env.local
+.env*.local

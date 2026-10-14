@@ -32,6 +32,7 @@ export const site = {
 
   earlyAccess: true,
   legalReviewed: false,
+  lastUpdated: "October 14, 2026",
 
   links: {
     github: "https://github.com/aegisbrain",

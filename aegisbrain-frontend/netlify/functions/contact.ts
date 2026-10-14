@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-
-export const runtime = "nodejs";
+import type { Config } from "@netlify/functions";
 
 // Best-effort limiter: it resets when the server restarts and is per instance.
 // Real protection comes later (a proper gateway or Cloudflare rules).
@@ -16,21 +14,21 @@ function limited(ip: string) {
 
 const clean = (v: unknown, max: number) => String(v ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, max);
 
-export async function POST(req: Request) {
+export default async (req: Request) => {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   if (limited(ip)) {
-    return NextResponse.json({ message: "Too many messages. Please try again later." }, { status: 429 });
+    return Response.json({ message: "Too many messages. Please try again later." }, { status: 429 });
   }
 
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ message: "That request was not valid." }, { status: 400 });
+    return Response.json({ message: "That request was not valid." }, { status: 400 });
   }
 
   // Honeypot: real people never fill this field.
-  if (clean(body.website, 200)) return NextResponse.json({ ok: true });
+  if (clean(body.website, 200)) return Response.json({ ok: true });
 
   const name = clean(body.name, 120);
   const email = clean(body.email, 200);
@@ -40,7 +38,7 @@ export async function POST(req: Request) {
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   if (!name || !emailOk || !company || message.length < 20 || body.consent !== true) {
-    return NextResponse.json(
+    return Response.json(
       { message: "Please fill in every required field and tick the consent box." },
       { status: 400 }
     );
@@ -51,7 +49,7 @@ export async function POST(req: Request) {
   const from = process.env.CONTACT_FROM_EMAIL;
 
   if (!key || !to || !from) {
-    return NextResponse.json(
+    return Response.json(
       { message: "The contact form is not switched on yet. Please email us directly." },
       { status: 503 }
     );
@@ -70,8 +68,10 @@ export async function POST(req: Request) {
   });
 
   if (!res.ok) {
-    return NextResponse.json({ message: "We could not send your message. Please email us directly." }, { status: 502 });
+    return Response.json({ message: "We could not send your message. Please email us directly." }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true });
-}
+  return Response.json({ ok: true });
+};
+
+export const config: Config = { path: "/api/contact", method: "POST" };
