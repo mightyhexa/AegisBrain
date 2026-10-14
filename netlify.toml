@@ -1,7 +1,7 @@
 ﻿[build]
   base = "aegisbrain-frontend"
-  command = "npm run build"
   publish = "out"
+  command = "npm run build"
 
 [[redirects]]
   from = "/*"
