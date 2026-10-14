@@ -1,30 +1,27 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Instrument_Serif } from "next/font/google";
 import {
   AnimatePresence,
   animate,
   motion,
-  useMotionTemplate,
   useMotionValue,
   useMotionValueEvent,
   useReducedMotion,
   useScroll,
   useSpring,
+  useTransform,
+  type MotionValue,
 } from "framer-motion";
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   BellRing,
   Check,
   CheckCircle2,
-  ChevronDown,
   Copy,
-  Database,
-  FileText,
   Fingerprint,
-  GitBranch,
   Lock,
   Mail,
   MessageCircle,
@@ -33,24 +30,88 @@ import {
   Play,
   RefreshCw,
   Send,
-  Shield,
   ShieldCheck,
   Sparkles,
-  Terminal,
-  UserCheck,
-  Workflow,
   X,
-  XCircle,
   Zap,
 } from "lucide-react";
 
 import Logo from "@/components/marketing/Logo";
-import RotatingCards from "@/components/marketing/RotatingCards";
 import LiveBackground from "./LiveBackground";
 import { faqs } from "@/lib/faq";
 
 /* ------------------------------------------------------------------ */
-/* Founder, Gateway & Physics Constants                               */
+/* Editorial Serif Font & GPU Motion Keyframes                        */
+/* ------------------------------------------------------------------ */
+
+const serif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  display: "swap",
+});
+
+const HOME_MOTION_CSS = `
+@keyframes ab-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes ab-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes ab-spin-rev {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(-360deg); }
+}
+@keyframes ab-wheel-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes ab-wheel-counter {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+@keyframes ab-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes ab-shine {
+  from { transform: translateX(-130%) skewX(-18deg); }
+  to { transform: translateX(260%) skewX(-18deg); }
+}
+@keyframes ab-ring {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes ab-cue {
+  0% { transform: scaleY(0); transform-origin: top; }
+  50% { transform: scaleY(1); transform-origin: top; }
+  50.01% { transform: scaleY(1); transform-origin: bottom; }
+  100% { transform: scaleY(0); transform-origin: bottom; }
+}
+.ab-marquee { animation: ab-marquee 52s linear infinite; will-change: transform; }
+.ab-marquee:hover { animation-play-state: paused; }
+.ab-orbit { animation: ab-spin 40s linear infinite; will-change: transform; }
+.ab-orbit-chip { animation: ab-spin-rev 40s linear infinite; will-change: transform; }
+.ab-wheel { animation: ab-wheel-spin 46s linear infinite; will-change: transform; }
+.ab-wheel:hover { animation-play-state: paused; }
+.ab-wheel-item { animation: ab-wheel-counter 46s linear infinite; will-change: transform; }
+.ab-wheel:hover .ab-wheel-item { animation-play-state: paused; }
+.ab-float { animation: ab-float 6s ease-in-out infinite; will-change: transform; }
+.ab-shine-wrap:hover .ab-shine { animation: ab-shine 0.9s ease; }
+.ab-ring { animation: ab-ring 2.2s ease-out infinite; }
+.ab-cue { animation: ab-cue 2.4s ease-in-out infinite; }
+.ab-conic { animation: ab-spin 30s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ab-marquee, .ab-orbit, .ab-orbit-chip, .ab-wheel, .ab-wheel-item, .ab-float, .ab-ring, .ab-cue, .ab-conic {
+    animation: none !important;
+  }
+}
+`;
+
+/* ------------------------------------------------------------------ */
+/* Constants, Types & Deterministic Gateway Logic                     */
 /* ------------------------------------------------------------------ */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -58,10 +119,35 @@ const FOUNDER_NAME = "Mohammed Fahad Ali";
 const FOUNDER_EMAIL = "mdfahadali.in@gmail.com";
 const FOUNDER_PHONE = "+91 91216 13624";
 
-const EASE_OUT_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
+const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 const EASE_DRAMATIC: [number, number, number, number] = [0.76, 0, 0.24, 1];
 
-type Verdict = "ALLOW" | "HOLD" | "DENY";
+export const VERDICT = {
+  allow: {
+    label: "Allowed",
+    text: "text-allow",
+    bg: "bg-allow/10",
+    border: "border-allow/30",
+    hex: "#0F9D6B",
+  },
+  hold: {
+    label: "Held",
+    text: "text-hold",
+    bg: "bg-hold/10",
+    border: "border-hold/30",
+    hex: "#B7791F",
+  },
+  deny: {
+    label: "Blocked",
+    text: "text-deny",
+    bg: "bg-deny/10",
+    border: "border-deny/30",
+    hex: "#D42B4D",
+  },
+} as const;
+
+export type VerdictKey = keyof typeof VERDICT;
+type VerdictUpper = "ALLOW" | "HOLD" | "DENY";
 type Params = Record<string, string | number>;
 type AgentCall = { agent: string; action: string; params: Params };
 
@@ -73,7 +159,7 @@ type Rule = {
   op: ">" | "<" | "==";
   threshold: number;
   vipOnly?: boolean;
-  effect: Verdict;
+  effect: VerdictUpper;
   priority: number;
   summary: string;
   source: string;
@@ -86,7 +172,7 @@ type Decision = {
   action: string;
   params: Params;
   correctedParams: Params | null;
-  verdict: Verdict;
+  verdict: VerdictUpper;
   ruleId: string | null;
   summary: string | null;
   source: string | null;
@@ -178,8 +264,8 @@ const SCENARIOS: Scenario[] = [
   {
     id: "refund",
     title: "Refund ₹8,000 to Customer",
-    who: "Autonomous Support Agent",
-    note: "Exceeds the ₹5,000 autonomous refund limit",
+    who: "Support agent",
+    note: "More than the ₹5,000 an agent may refund alone",
     badge: "Quarantine Hold",
     call: {
       agent: "support_bot_1",
@@ -189,9 +275,9 @@ const SCENARIOS: Scenario[] = [
   },
   {
     id: "discount_regular",
-    title: "10% Discount for Regular Customer",
-    who: "Checkout Sales Agent",
-    note: "Outdated agent attempting 10% when active cap is 5%",
+    title: "10% discount for a regular customer",
+    who: "Sales agent",
+    note: "Outdated agent trying 10% when cap is 5%",
     badge: "Auto-Correct",
     call: {
       agent: "sales_bot_3",
@@ -201,9 +287,9 @@ const SCENARIOS: Scenario[] = [
   },
   {
     id: "discount_vip",
-    title: "10% Discount for VIP Customer",
-    who: "Enterprise Account Agent",
-    note: "VIP tier triggers two-person manager hold",
+    title: "10% discount for a VIP customer",
+    who: "Sales agent",
+    note: "VIP exceptions go to a manager",
     badge: "VIP Escalation",
     call: {
       agent: "sales_bot_3",
@@ -213,9 +299,9 @@ const SCENARIOS: Scenario[] = [
   },
   {
     id: "order",
-    title: "Mark Order #88219 as Dispatched",
-    who: "Fulfilment Logistics Agent",
-    note: "Complies with all active operational policies",
+    title: "Mark order 88219 as dispatched",
+    who: "Fulfilment agent",
+    note: "No rule blocks this one",
     badge: "Zero-Friction Allow",
     call: {
       agent: "ops_bot_2",
@@ -225,36 +311,29 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
-const VERDICT_UI: Record<
-  Verdict,
-  { label: string; text: string; bg: string; border: string; accentHex: string }
+const VERDICT_UPPER_UI: Record<
+  VerdictUpper,
+  { label: string; text: string; bg: string; border: string }
 > = {
   ALLOW: {
     label: "Approved & Executed",
     text: "text-allow",
     bg: "bg-allow/10",
     border: "border-allow/30",
-    accentHex: "#059669",
   },
   HOLD: {
     label: "Held for Manager",
     text: "text-hold",
     bg: "bg-hold/10",
     border: "border-hold/30",
-    accentHex: "#D97706",
   },
   DENY: {
     label: "Intercepted & Auto-Corrected",
     text: "text-deny",
     bg: "bg-deny/10",
     border: "border-deny/30",
-    accentHex: "#2B54F0",
   },
 };
-
-/* ------------------------------------------------------------------ */
-/* Core Deterministic Evaluation & Helper Functions                   */
-/* ------------------------------------------------------------------ */
 
 function matchesRule(rule: Rule, call: AgentCall): boolean {
   if (rule.action !== call.action) return false;
@@ -419,12 +498,73 @@ async function evaluateGateway(call: AgentCall, rules: Rule[]): Promise<Decision
 }
 
 /* ------------------------------------------------------------------ */
-/* Creative Animation Primitives (Magnetic, 3D Tilt, HexScramble)     */
+/* Shared Primitives from Claude's Design System (parts.tsx)          */
 /* ------------------------------------------------------------------ */
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <motion.span
+        initial={{ scaleX: 0 }}
+        whileInView={{ scaleX: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.9, ease: EASE }}
+        className="h-px w-10 origin-left bg-cobalt"
+      />
+      <span className="text-sm font-medium tracking-wide text-cobalt">{children}</span>
+    </div>
+  );
+}
+
+function SplitWords({
+  text,
+  className = "",
+  delay = 0,
+  italic = [],
+}: {
+  text: string;
+  className?: string;
+  delay?: number;
+  italic?: string[];
+}) {
+  const words = text.split(" ");
+  return (
+    <span className={className}>
+      <span className="sr-only">{text}</span>
+      {words.map((w, i) => {
+        const isItalic = italic.includes(w);
+        return (
+          <span
+            key={i}
+            className={`inline-block overflow-hidden pb-[0.18em] pt-[0.06em] align-bottom ${
+              isItalic ? "pr-[0.24em] -mr-[0.16em]" : "pr-[0.06em] -mr-[0.04em]"
+            }`}
+            aria-hidden="true"
+          >
+            <motion.span
+              className={`inline-block will-change-transform ${
+                isItalic
+                  ? `${serif.className} font-normal italic text-cobalt text-[1.08em]`
+                  : ""
+              }`}
+              initial={{ y: "118%", rotate: 5 }}
+              whileInView={{ y: "0%", rotate: 0 }}
+              viewport={{ once: true, margin: "-8%" }}
+              transition={{ duration: 0.9, ease: EASE, delay: delay + i * 0.055 }}
+            >
+              {w}
+            </motion.span>
+            {i < words.length - 1 ? "\u00a0" : ""}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 function Magnetic({
   children,
-  strength = 0.22,
+  strength = 0.3,
   className = "",
 }: {
   children: React.ReactNode;
@@ -432,454 +572,2297 @@ function Magnetic({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const springX = useSpring(x, { stiffness: 320, damping: 22, mass: 0.4 });
-  const springY = useSpring(y, { stiffness: 320, damping: 22, mass: 0.4 });
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    x.set((e.clientX - centerX) * strength);
-    y.set((e.clientY - centerY) * strength);
-  };
-
-  const handleMouseLeave = () => {
-    x.set(0);
-    y.set(0);
-  };
+  const sx = useSpring(x, { stiffness: 260, damping: 18, mass: 0.3 });
+  const sy = useSpring(y, { stiffness: 260, damping: 18, mass: 0.3 });
 
   return (
     <motion.div
       ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{ x: springX, y: springY }}
       className={`inline-block ${className}`}
+      style={{ x: sx, y: sy }}
+      onPointerMove={(e) => {
+        if (reduce || !ref.current) return;
+        const r = ref.current.getBoundingClientRect();
+        x.set((e.clientX - (r.left + r.width / 2)) * strength);
+        y.set((e.clientY - (r.top + r.height / 2)) * strength);
+      }}
+      onPointerLeave={() => {
+        x.set(0);
+        y.set(0);
+      }}
     >
       {children}
     </motion.div>
   );
 }
 
-function SpotlightTiltCard({
-  children,
-  className = "",
-  tiltMax = 5,
-  glowColor = "rgba(43, 84, 240, 0.13)",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  tiltMax?: number;
-  glowColor?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const mouseX = useMotionValue(260);
-  const mouseY = useMotionValue(180);
-  const rotateX = useMotionValue(0);
-  const rotateY = useMotionValue(0);
-  const spotOpacity = useMotionValue(0);
-
-  const smoothRotateX = useSpring(rotateX, { stiffness: 260, damping: 26 });
-  const smoothRotateY = useSpring(rotateY, { stiffness: 260, damping: 26 });
-  const smoothOpacity = useSpring(spotOpacity, { stiffness: 240, damping: 28 });
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const localX = e.clientX - rect.left;
-    const localY = e.clientY - rect.top;
-    mouseX.set(localX);
-    mouseY.set(localY);
-
-    const pctX = (localX / rect.width - 0.5) * 2;
-    const pctY = (localY / rect.height - 0.5) * 2;
-    rotateX.set(-pctY * tiltMax);
-    rotateY.set(pctX * tiltMax);
-    spotOpacity.set(1);
-  };
-
-  const handleMouseLeave = () => {
-    rotateX.set(0);
-    rotateY.set(0);
-    spotOpacity.set(0);
-  };
-
-  const background = useMotionTemplate`radial-gradient(540px circle at ${mouseX}px ${mouseY}px, ${glowColor}, transparent 72%)`;
-
+function Chars({ text, base }: { text: string; base: number }) {
+  const words = text.split(" ");
+  let n = 0;
   return (
-    <motion.div
-      ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        rotateX: smoothRotateX,
-        rotateY: smoothRotateY,
-        transformPerspective: 1200,
-      }}
-      className={`group relative overflow-hidden ${className}`}
+    <span
+      className="block overflow-hidden pb-[0.14em] pt-[0.08em]"
+      style={{ perspective: 800 }}
     >
-      <motion.div
-        className="pointer-events-none absolute -inset-px z-0 rounded-[inherit]"
-        style={{ background, opacity: smoothOpacity }}
-      />
-      <div className="relative z-10 h-full">{children}</div>
-    </motion.div>
-  );
-}
-
-function HexScrambleText({
-  text,
-  className = "",
-}: {
-  text: string;
-  className?: string;
-}) {
-  const [displayed, setDisplayed] = useState(text);
-
-  useEffect(() => {
-    const chars = "0123456789abcdef•";
-    let frame = 0;
-    const totalFrames = 14;
-    const interval = setInterval(() => {
-      frame++;
-      if (frame >= totalFrames) {
-        setDisplayed(text);
-        clearInterval(interval);
-        return;
-      }
-      const progress = frame / totalFrames;
-      const lockedCount = Math.floor(text.length * progress);
-      const next = text
-        .split("")
-        .map((ch, idx) => {
-          if (idx < lockedCount || ch === "-" || ch === "_" || ch === ":") return ch;
-          return chars[Math.floor(Math.random() * chars.length)];
-        })
-        .join("");
-      setDisplayed(next);
-    }, 28);
-    return () => clearInterval(interval);
-  }, [text]);
-
-  return <span className={className}>{displayed}</span>;
-}
-
-function CountUp({ to, play }: { to: number; play: boolean }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!play) return;
-    const controls = animate(0, to, {
-      duration: 1.15,
-      ease: EASE_OUT_EXPO,
-      onUpdate: (v) => {
-        if (ref.current) ref.current.textContent = String(Math.round(v));
-      },
-    });
-    return () => controls.stop();
-  }, [play, to]);
-  return <span ref={ref}>{to}</span>;
-}
-
-function Reveal({
-  children,
-  delay = 0,
-  ready,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  ready: boolean;
-}) {
-  return (
-    <span className="-mb-[0.14em] block overflow-hidden pb-[0.14em]">
-      <motion.span
-        className="block origin-bottom-left"
-        initial={{ y: "115%", rotateZ: 2.5, opacity: 0 }}
-        animate={{
-          y: ready ? "0%" : "115%",
-          rotateZ: ready ? 0 : 2.5,
-          opacity: ready ? 1 : 0,
-        }}
-        transition={{ duration: 0.95, ease: EASE_OUT_EXPO, delay }}
-      >
-        {children}
-      </motion.span>
+      {words.map((w, wi) => (
+        <span key={wi} className="inline-block whitespace-nowrap">
+          {w.split("").map((c, ci) => {
+            const i = n++;
+            return (
+              <motion.span
+                key={ci}
+                className="inline-block cursor-default"
+                style={{ transformOrigin: "50% 100%" }}
+                initial={{ y: "125%", rotateX: -85 }}
+                animate={{ y: "0%", rotateX: 0 }}
+                transition={{ duration: 0.9, ease: EASE, delay: base + i * 0.028 }}
+                whileHover={{
+                  y: -7,
+                  color: "#2B54F0",
+                  transition: { type: "spring", stiffness: 500, damping: 14 },
+                }}
+              >
+                {c}
+              </motion.span>
+            );
+          })}
+          {wi < words.length - 1 && <span className="inline-block w-[0.26em]" />}
+        </span>
+      ))}
     </span>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Live Telemetry Ribbon & Animated SVG Architecture Topology         */
+/* Section 1: Hero + 3D TiltConsole with Orbiting Source Chips        */
 /* ------------------------------------------------------------------ */
 
-function LiveTelemetryRibbon({
-  activeRulesCount,
-  lastMs,
-  currentCap,
-}: {
-  activeRulesCount: number;
-  lastMs: number | null;
-  currentCap: number;
-}) {
+const HERO_EVENTS: {
+  agent: string;
+  action: string;
+  detail: string;
+  verdict: VerdictKey;
+  rule: string;
+}[] = [
+  {
+    agent: "sales_bot_3",
+    action: "discounts.apply",
+    detail: "10% off, regular customer",
+    verdict: "deny",
+    rule: "promo_cap_v2",
+  },
+  {
+    agent: "support_bot_1",
+    action: "refunds.create",
+    detail: "₹8,000 refund",
+    verdict: "hold",
+    rule: "refund_cap_v1",
+  },
+  {
+    agent: "sales_bot_3",
+    action: "discounts.apply",
+    detail: "5% off, regular customer",
+    verdict: "allow",
+    rule: "promo_cap_v2",
+  },
+  {
+    agent: "ops_bot_2",
+    action: "orders.update_status",
+    detail: "mark order dispatched",
+    verdict: "allow",
+    rule: "no rule blocks this",
+  },
+];
+
+function TiltConsole() {
+  const reduce = useReducedMotion();
+  const [i, setI] = useState(0);
+  const rx = useMotionValue(0);
+  const ry = useMotionValue(0);
+  const srx = useSpring(rx, { stiffness: 140, damping: 16, mass: 0.4 });
+  const sry = useSpring(ry, { stiffness: 140, damping: 16, mass: 0.4 });
+  const e = HERO_EVENTS[i];
+  const v = VERDICT[e.verdict];
+
+  useEffect(() => {
+    const id = setInterval(() => setI((n) => (n + 1) % HERO_EVENTS.length), 3600);
+    return () => clearInterval(id);
+  }, []);
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.7, delay: 0.25, ease: EASE_OUT_EXPO }}
-      className="mx-auto max-w-7xl px-6 pt-6"
+    <div
+      className="relative mx-auto w-full max-w-[460px]"
+      style={{ perspective: 1200 }}
+      onPointerMove={(ev) => {
+        if (reduce) return;
+        const r = ev.currentTarget.getBoundingClientRect();
+        ry.set(((ev.clientX - r.left) / r.width - 0.5) * 18);
+        rx.set(((ev.clientY - r.top) / r.height - 0.5) * -14);
+      }}
+      onPointerLeave={() => {
+        rx.set(0);
+        ry.set(0);
+      }}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ice bg-gradient-to-r from-white/95 via-[#F4F8FF]/95 to-white/95 px-4 py-2.5 shadow-[0_8px_30px_rgba(43,84,240,0.07)] backdrop-blur-md">
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <span className="inline-flex items-center gap-2 rounded-full bg-cobalt/10 px-3 py-1 font-semibold text-cobalt">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cobalt opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-cobalt" />
-            </span>
-            AST Gateway · Live
+      {/* Slow orbit of message sources */}
+      <div
+        className="ab-orbit pointer-events-none absolute -inset-10 rounded-full border border-dashed border-ice"
+        aria-hidden="true"
+      >
+        {[
+          { l: "50%", t: "0%", label: "Slack" },
+          { l: "93%", t: "75%", label: "Email" },
+          { l: "7%", t: "75%", label: "WhatsApp" },
+        ].map((c) => (
+          <span
+            key={c.label}
+            className="ab-orbit-chip absolute rounded-full border border-white/90 bg-white/95 px-3.5 py-1.5 text-xs font-medium text-ink shadow-[0_10px_24px_-8px_rgba(43,84,240,0.35)]"
+            style={{ left: c.l, top: c.t }}
+          >
+            {c.label}
           </span>
-          <span className="hidden items-center gap-1.5 text-muted sm:inline-flex">
-            <Database className="h-3.5 w-3.5 text-cobalt" />
-            Supabase Ledger: <strong className="font-mono text-ink">ap-south-1 (Mumbai)</strong>
-          </span>
-          <span className="hidden h-3.5 w-px bg-ice md:inline-block" />
-          <span className="hidden items-center gap-1.5 text-muted md:inline-flex">
-            <Shield className="h-3.5 w-3.5 text-allow" />
-            Active Promo Ceiling: <strong className="font-mono text-cobalt">{currentCap}% Max</strong>
-          </span>
+        ))}
+      </div>
+
+      <motion.div
+        className="relative rounded-[32px] border border-white/90 bg-gradient-to-b from-white to-[#EAF1FF] p-6"
+        style={{
+          rotateX: srx,
+          rotateY: sry,
+          transformStyle: "preserve-3d",
+          boxShadow:
+            "0 60px 100px -30px rgba(43,84,240,0.45), 0 14px 34px rgba(11,26,51,0.10)",
+        }}
+        initial={{ opacity: 0, y: 70, rotateX: 24, scale: 0.92 }}
+        animate={{ opacity: 1, y: 0, rotateX: 0, scale: 1 }}
+        transition={{ duration: 1.3, ease: EASE, delay: 0.45 }}
+      >
+        <div
+          className="flex items-center justify-between"
+          style={{ transform: "translateZ(20px)" }}
+        >
+          <div className="flex gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-deny/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-hold/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-allow/70" />
+          </div>
+          <span className="text-xs text-muted">Gateway, live preview</span>
         </div>
 
-        <div className="flex items-center gap-4 font-mono text-[11px]">
-          <span className="text-muted">
-            RULES: <strong className="text-ink">{activeRulesCount} ACTIVE</strong>
-          </span>
-          <span className="rounded-lg border border-ice bg-white px-2.5 py-0.5 font-semibold text-cobalt shadow-sm">
-            p99: {lastMs ? `${lastMs.toFixed(2)} ms` : "0.38 ms"}
-          </span>
+        <div className="mt-6" style={{ transform: "translateZ(40px)" }}>
+          <p className="text-xs text-muted">An agent asks to act</p>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 18, rotateX: -20 }}
+              animate={{ opacity: 1, y: 0, rotateX: 0 }}
+              exit={{ opacity: 0, y: -14, rotateX: 18 }}
+              transition={{ duration: 0.45, ease: EASE }}
+              className="mt-2 rounded-2xl border border-ice bg-white/85 p-4 font-mono text-[13px] leading-relaxed shadow-sm"
+            >
+              <p className="text-cobalt">{e.agent}</p>
+              <p className="mt-1 text-lg font-semibold text-ink">{e.action}</p>
+              <p className="text-muted">{e.detail}</p>
+            </motion.div>
+          </AnimatePresence>
         </div>
-      </div>
-    </motion.div>
+
+        <div
+          className="relative mt-6 h-1.5 overflow-hidden rounded-full bg-mist"
+          style={{ transform: "translateZ(30px)" }}
+        >
+          <motion.div
+            key={i}
+            className="h-full origin-left rounded-full bg-cobalt"
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ duration: 1, ease: "easeInOut" }}
+          />
+        </div>
+
+        <div className="relative mt-6 h-24" style={{ transform: "translateZ(70px)" }}>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={i}
+              className="absolute inset-0 flex items-center justify-between gap-4"
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+            >
+              <div className="min-w-0">
+                <p className="text-xs text-muted">Rule applied</p>
+                <p className="truncate font-mono text-[13px] text-ink">{e.rule}</p>
+              </div>
+              <motion.div
+                className={`shrink-0 rounded-2xl border-[3px] px-5 py-2.5 font-display text-2xl font-semibold uppercase tracking-wide ${v.text} ${v.bg} ${v.border}`}
+                initial={{ scale: 2.4, rotate: -16, opacity: 0 }}
+                animate={{ scale: 1, rotate: -5, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 520, damping: 17, delay: 0.85 }}
+              >
+                {v.label}
+              </motion.div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
-function LivePacketTopology({ currentCap }: { currentCap: number }) {
-  const [selectedStage, setSelectedStage] = useState<number>(2);
-
-  const STAGES = [
-    {
-      id: 0,
-      label: "01 · Channel Stream",
-      title: "Slack, WhatsApp & Gmail Listeners",
-      metric: "Opt-In Channels Only",
-      detail:
-        "Watches executive announcement channels for policy changes without ever touching private DMs.",
-    },
-    {
-      id: 1,
-      idLabel: "AST",
-      label: "02 · 1-Tap Sign-Off",
-      title: "Manager Gmail / WhatsApp Approval",
-      metric: "HMAC-SHA256 Signed Link",
-      detail:
-        "Sends a plain-English verification card to the decision-maker before any agent rule changes.",
-    },
-    {
-      id: 2,
-      label: "03 · AST Gateway",
-      title: "Sub-Millisecond Parameter Rewrite",
-      metric: `Active Cap: ${currentCap}%`,
-      detail: `Intercepts outdated AI agent calls in < 0.45 ms and auto-corrects parameters to ${currentCap}%.`,
-    },
-    {
-      id: 3,
-      label: "04 · Cryptographic Ledger",
-      title: "Triple SHA-256 Hash Chain",
-      metric: "Tamper-Evident Audit",
-      detail:
-        "Every decision, hold token, and policy revision is chained into Supabase PostgreSQL.",
-    },
-  ];
+function HeroSection({ onOpenPortal }: { onOpenPortal: () => void }) {
+  const { scrollY } = useScroll();
+  const yText = useTransform(scrollY, [0, 700], [0, -70]);
+  const yCard = useTransform(scrollY, [0, 700], [0, 60]);
 
   return (
-    <div className="mt-12 rounded-[34px] border border-ice bg-gradient-to-b from-white via-[#F5F9FF] to-[#EAF2FF] p-6 shadow-[0_28px_70px_-20px_rgba(43,84,240,0.20)] md:p-9">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ice pb-5">
-        <div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-cobalt/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-cobalt">
-            <Workflow className="h-3.5 w-3.5" /> Live Telemetry &amp; Packet Choreography
-          </span>
-          <h3 className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink md:text-3xl">
-            Real-Time Policy Sync &amp; Agent Interception Pipeline
-          </h3>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-ice bg-white px-3.5 py-1.5 text-xs font-medium text-muted shadow-sm">
-          <Activity className="h-3.5 w-3.5 text-cobalt animate-pulse" />
-          Click any node to inspect live gateway state
-        </div>
-      </div>
+    <section className="relative mx-auto max-w-7xl px-6 pb-24 pt-12 md:pt-20">
+      <div className="grid items-center gap-16 lg:grid-cols-12">
+        <motion.div className="lg:col-span-7" style={{ y: yText }}>
+          <motion.p
+            className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/90 bg-white/80 px-4 py-1.5 text-sm text-muted shadow-sm backdrop-blur-md"
+            initial={{ opacity: 0, x: -30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.9, ease: EASE, delay: 0.1 }}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="ab-ring absolute inline-flex h-full w-full rounded-full bg-cobalt/60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-cobalt" />
+            </span>
+            Early access. Now onboarding pilot teams.
+          </motion.p>
 
-      {/* Animated SVG Pipeline Schematic */}
-      <div className="relative my-6 overflow-hidden rounded-3xl border border-ice bg-white/90 p-4 shadow-inner md:p-6">
-        <svg
-          viewBox="0 0 920 170"
-          className="h-auto w-full select-none"
-          aria-label="AegisBrain Live Packet Architecture"
-        >
-          <defs>
-            <linearGradient id="cobaltLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#93C5FD" stopOpacity="0.35" />
-              <stop offset="50%" stopColor="#2B54F0" stopOpacity="0.95" />
-              <stop offset="100%" stopColor="#059669" stopOpacity="0.85" />
-            </linearGradient>
-            <filter id="cobaltGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
+          <h1
+            className="font-display font-semibold tracking-[-0.04em] text-ink"
+            style={{ fontSize: "clamp(2.7rem, 7.2vw, 6.2rem)", lineHeight: 0.98 }}
+          >
+            <span className="sr-only">Your agents follow the rules you decided today.</span>
+            <span aria-hidden="true">
+              <Chars text="Your agents follow" base={0.15} />
+              <Chars text="the rules you decided" base={0.42} />
+              <span className="block overflow-hidden pb-[0.18em]">
+                <motion.span
+                  className={`${serif.className} inline-block italic text-cobalt`}
+                  style={{ fontSize: "1.12em", lineHeight: 0.95 }}
+                  initial={{ y: "120%", skewY: 8 }}
+                  animate={{ y: "0%", skewY: 0 }}
+                  transition={{ duration: 1.1, ease: EASE, delay: 0.78 }}
+                >
+                  today.
+                </motion.span>
+              </span>
+            </span>
+          </h1>
 
-          {/* Subtle Blueprint Grid Background Lines */}
-          {[40, 85, 130].map((y) => (
-            <line
-              key={y}
-              x1="20"
-              y1={y}
-              x2="900"
-              y2={y}
-              stroke="#E2ECFC"
-              strokeDasharray="4 6"
-              strokeWidth="1"
-            />
-          ))}
+          <motion.p
+            className="mt-8 max-w-xl text-lg leading-relaxed text-muted md:text-xl"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: EASE, delay: 1.0 }}
+          >
+            AegisBrain turns decisions made in chat into approved rules, then checks every action
+            your AI agents take before it happens.
+          </motion.p>
 
-          {/* Main Connecting Conduit Path */}
-          <path
-            d="M 120 85 C 220 35, 260 135, 360 85 C 460 35, 500 135, 600 85 C 700 35, 740 135, 810 85"
-            fill="none"
-            stroke="#D8E4FA"
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-          <motion.path
-            d="M 120 85 C 220 35, 260 135, 360 85 C 460 35, 500 135, 600 85 C 700 35, 740 135, 810 85"
-            fill="none"
-            stroke="url(#cobaltLineGrad)"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeDasharray="14 10"
-            animate={{ strokeDashoffset: [0, -96] }}
-            transition={{ duration: 2.8, repeat: Infinity, ease: "linear" }}
-          />
-
-          {/* Interactive Pipeline Nodes */}
-          {[
-            { cx: 115, cy: 85, title: "Slack / WA", sub: "Ingest" },
-            { cx: 355, cy: 85, title: "1-Tap Verify", sub: "Gmail / WA" },
-            { cx: 595, cy: 85, title: "AST Engine", sub: `Cap: ${currentCap}%` },
-            { cx: 810, cy: 85, title: "AI Agents", sub: "Auto-Fixed" },
-          ].map((node, i) => {
-            const active = selectedStage === i;
-            return (
-              <g
-                key={node.title}
-                onClick={() => setSelectedStage(i)}
-                className="cursor-pointer"
+          <motion.div
+            className="mt-10 flex flex-wrap items-center gap-7"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: EASE, delay: 1.15 }}
+          >
+            <Magnetic strength={0.35}>
+              <button
+                type="button"
+                onClick={onOpenPortal}
+                className="ab-shine-wrap relative inline-block overflow-hidden rounded-full bg-cobalt px-8 py-4 font-medium text-white shadow-[0_18px_40px_-12px_rgba(43,84,240,0.7)]"
               >
-                {active && (
-                  <motion.circle
-                    cx={node.cx}
-                    cy={node.cy}
-                    r={38}
-                    fill="none"
-                    stroke="#2B54F0"
-                    strokeWidth="1.5"
-                    initial={{ scale: 0.8, opacity: 0.8 }}
-                    animate={{ scale: 1.25, opacity: 0 }}
-                    transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
-                  />
-                )}
-                <circle
-                  cx={node.cx}
-                  cy={node.cy}
-                  r={30}
-                  fill={active ? "#2B54F0" : "#FFFFFF"}
-                  stroke={active ? "#1E40AF" : "#93C5FD"}
-                  strokeWidth="2.5"
-                  filter={active ? "url(#cobaltGlow)" : undefined}
+                <span
+                  className="ab-shine absolute inset-y-0 left-0 w-1/3 bg-white/30"
+                  aria-hidden="true"
                 />
-                <text
-                  x={node.cx}
-                  y={node.cy + 4}
-                  textAnchor="middle"
-                  fill={active ? "#FFFFFF" : "#0B1A33"}
-                  fontSize="12"
-                  fontWeight="700"
-                  fontFamily="monospace"
-                >
-                  0{i + 1}
-                </text>
-                <text
-                  x={node.cx}
-                  y={node.cy + 52}
-                  textAnchor="middle"
-                  fill="#0B1A33"
-                  fontSize="12.5"
-                  fontWeight="700"
-                >
-                  {node.title}
-                </text>
-                <text
-                  x={node.cx}
-                  y={node.cy + 68}
-                  textAnchor="middle"
-                  fill="#2B54F0"
-                  fontSize="10.5"
-                  fontWeight="600"
-                >
-                  {node.sub}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+                <span className="relative">Talk to us · Manager Portal</span>
+              </button>
+            </Magnetic>
+
+            <a href="#how" className="group relative font-medium text-ink">
+              See how it works
+              <span className="absolute -bottom-1.5 left-0 h-[2px] w-full origin-left scale-x-[0.25] bg-cobalt transition-transform duration-500 group-hover:scale-x-100" />
+            </a>
+          </motion.div>
+        </motion.div>
+
+        <motion.div className="lg:col-span-5" style={{ y: yCard }}>
+          <TiltConsole />
+        </motion.div>
       </div>
 
-      {/* Node Inspector Cards */}
-      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {STAGES.map((s, idx) => {
-          const active = selectedStage === idx;
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSelectedStage(idx)}
-              className={`rounded-2xl border p-4 text-left transition-all duration-300 ${
-                active
-                  ? "border-cobalt bg-white shadow-[0_14px_34px_rgba(43,84,240,0.16)] -translate-y-1"
-                  : "border-ice bg-white/70 hover:border-cobalt/40 hover:bg-white"
-              }`}
+      <div
+        className="mt-20 hidden items-center gap-3 text-sm text-muted md:flex"
+        aria-hidden="true"
+      >
+        <span className="relative block h-10 w-px overflow-hidden bg-ice">
+          <span className="ab-cue absolute inset-0 bg-cobalt" />
+        </span>
+        Scroll
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 2: Infinite Pause-on-Hover Decision Ticker                 */
+/* ------------------------------------------------------------------ */
+
+const TICKER_ITEMS: [VerdictKey, string, string][] = [
+  ["deny", "discounts.apply", "10% off, regular customer"],
+  ["allow", "discounts.apply", "5% off"],
+  ["hold", "refunds.create", "₹8,000 refund"],
+  ["allow", "orders.update_status", "mark dispatched"],
+  ["hold", "discounts.apply", "VIP, 10% off"],
+  ["deny", "refunds.create", "digital goods, after cutoff"],
+  ["allow", "refunds.create", "₹2,500 refund"],
+];
+
+function TickerRow({ hidden }: { hidden?: boolean }) {
+  return (
+    <ul className="flex shrink-0 items-center gap-4 pr-4" aria-hidden={hidden}>
+      {TICKER_ITEMS.map(([k, a, d], i) => {
+        const v = VERDICT[k];
+        return (
+          <li
+            key={i}
+            className="flex items-center gap-3 rounded-full border border-white/90 bg-white/85 py-2.5 pl-3 pr-5 shadow-sm backdrop-blur-md"
+          >
+            <span
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${v.text} ${v.bg} ${v.border}`}
+            >
+              {v.label}
+            </span>
+            <span className="font-mono text-[13px] text-ink">{a}</span>
+            <span className="text-sm text-muted">{d}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Ticker() {
+  return (
+    <section className="relative py-6" aria-label="Example decisions">
+      <p className="mx-auto mb-4 max-w-7xl px-6 text-sm text-muted">
+        Example decisions, as the gateway would answer them
+      </p>
+      <div
+        className="overflow-hidden"
+        style={{
+          maskImage: "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)",
+          WebkitMaskImage:
+            "linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)",
+        }}
+      >
+        <div className="ab-marquee flex w-max">
+          <TickerRow />
+          <TickerRow hidden />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 3: Smoothly Auto-Rotating Bluish-White Cards Wheel         */
+/* (Inspired by your Cards Animation reference image)                 */
+/* ------------------------------------------------------------------ */
+
+const ORBITAL_CARDS = [
+  {
+    id: "syntax",
+    angle: 0,
+    tag: "Rule Compiler",
+    title: "Plain English to AST",
+    detail: "Turns natural Slack & WhatsApp messages into deterministic conditions.",
+    kind: "type" as const,
+  },
+  {
+    id: "curve",
+    angle: 45,
+    tag: "Latency Curve",
+    title: "0.38 ms p99 Check",
+    detail: "Pure Python AST evaluation with zero LLM calls in the hot path.",
+    kind: "wave" as const,
+  },
+  {
+    id: "gauge",
+    angle: 90,
+    tag: "Active Cap",
+    title: "5% Promo Ceiling",
+    detail: "Outdated agents requesting 10% or 15% are automatically rewritten to 5%.",
+    kind: "gauge" as const,
+  },
+  {
+    id: "split",
+    angle: 135,
+    tag: "Two-Person Hold",
+    title: "Quarantine Token",
+    detail: "High-value refunds wait for a single-use HMAC manager release token.",
+    kind: "split" as const,
+  },
+  {
+    id: "symmetry",
+    angle: 180,
+    tag: "Role Scope",
+    title: "Authority Matrix",
+    detail: "Verifies sender role before a single policy draft is ever compiled.",
+    kind: "axis" as const,
+  },
+  {
+    id: "version",
+    angle: 225,
+    tag: "Immutable Version",
+    title: "Revision #21",
+    detail: "Every rule change increments the version and links the original message.",
+    kind: "number" as const,
+  },
+  {
+    id: "glow",
+    angle: 270,
+    tag: "Shadow Mode",
+    title: "Zero-Risk Pilot",
+    detail: "Observe what AegisBrain would have blocked for 2 weeks before enforcing.",
+    kind: "aura" as const,
+  },
+  {
+    id: "nodes",
+    angle: 315,
+    tag: "Audit Chain",
+    title: "SHA-256 Constellation",
+    detail: "Every decision is cryptographically linked to the hash before it.",
+    kind: "dots" as const,
+  },
+];
+
+function OrbitalCardFace({
+  kind,
+  active,
+}: {
+  kind: (typeof ORBITAL_CARDS)[number]["kind"];
+  active: boolean;
+}) {
+  const ringBorder = active
+    ? "border-cobalt shadow-[0_26px_55px_-16px_rgba(43,84,240,0.42)] scale-105"
+    : "border-white/95 shadow-[0_20px_45px_-18px_rgba(43,84,240,0.25)] hover:scale-105";
+
+  return (
+    <div
+      className={`relative flex h-32 w-32 flex-col items-center justify-center overflow-hidden rounded-[28px] border bg-gradient-to-b from-white via-[#F4F8FF] to-[#E3EEFF] p-3.5 transition-all duration-300 md:h-36 md:w-36 ${ringBorder}`}
+    >
+      {/* Subtle blueprint grid texture inside bluish cards */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-45"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, #D8E6FC 1px, transparent 1px), linear-gradient(to bottom, #D8E6FC 1px, transparent 1px)",
+          backgroundSize: "18px 18px",
+        }}
+      />
+
+      {kind === "type" && (
+        <div className="relative text-center">
+          <p className="font-display text-2xl font-semibold tracking-tight text-ink md:text-3xl">
+            AaBbCc
+          </p>
+          <span className="mt-1.5 inline-block rounded-full bg-cobalt/10 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-cobalt">
+            AST · v2
+          </span>
+        </div>
+      )}
+
+      {kind === "wave" && (
+        <svg viewBox="0 0 100 64" className="relative h-16 w-24">
+          <path
+            d="M 6 48 Q 28 8, 50 34 T 94 18"
+            fill="none"
+            stroke="#2B54F0"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+          />
+          <circle cx="28" cy="21" r="4" fill="#2B54F0" />
+          <circle cx="74" cy="28" r="4" fill="#0F9D6B" />
+        </svg>
+      )}
+
+      {kind === "gauge" && (
+        <div className="relative grid place-items-center">
+          <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
+            <circle cx="40" cy="40" r="30" fill="none" stroke="#D8E5FC" strokeWidth="6" />
+            <circle
+              cx="40"
+              cy="40"
+              r="30"
+              fill="none"
+              stroke="#0B1A33"
+              strokeWidth="6"
+              strokeDasharray="188"
+              strokeDashoffset="115"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="absolute font-display text-xl font-bold text-ink">23%</span>
+        </div>
+      )}
+
+      {kind === "split" && (
+        <div className="relative flex h-full w-full items-center gap-2 px-1">
+          <div className="h-20 flex-1 rounded-2xl bg-[#BDD3F8]" />
+          <div className="relative h-20 flex-1 rounded-2xl bg-[#DCE9FF]">
+            <span className="absolute bottom-2 right-2 h-7 w-7 rounded-full bg-ink shadow-md" />
+          </div>
+        </div>
+      )}
+
+      {kind === "axis" && (
+        <svg viewBox="0 0 90 70" className="relative h-16 w-24">
+          <line x1="45" y1="6" x2="45" y2="64" stroke="#0B1A33" strokeWidth="2" />
+          <path d="M 22 10 C 36 28, 36 42, 22 60" fill="none" stroke="#7FA6F6" strokeWidth="2" />
+          <path d="M 68 10 C 54 28, 54 42, 68 60" fill="none" stroke="#7FA6F6" strokeWidth="2" />
+          <circle cx="45" cy="35" r="4.5" fill="#0B1A33" />
+        </svg>
+      )}
+
+      {kind === "number" && (
+        <div className="relative text-center">
+          <p className="font-display text-5xl font-semibold leading-none tracking-tight text-ink">
+            21
+          </p>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-cobalt">
+            Locked
+          </p>
+        </div>
+      )}
+
+      {kind === "aura" && (
+        <div className="relative grid h-20 w-20 place-items-center">
+          <div
+            className="h-16 w-16 rounded-full blur-[6px]"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(43,84,240,0.85) 0%, rgba(96,165,250,0.55) 55%, transparent 75%)",
+            }}
+          />
+          <span className="absolute font-mono text-[11px] font-bold text-white">SHADOW</span>
+        </div>
+      )}
+
+      {kind === "dots" && (
+        <svg viewBox="0 0 80 80" className="relative h-20 w-20">
+          <line x1="22" y1="26" x2="54" y2="20" stroke="#93B4F8" strokeWidth="1.5" />
+          <line x1="54" y1="20" x2="60" y2="52" stroke="#93B4F8" strokeWidth="1.5" />
+          <line x1="22" y1="26" x2="36" y2="58" stroke="#93B4F8" strokeWidth="1.5" />
+          {[
+            [22, 26],
+            [54, 20],
+            [60, 52],
+            [36, 58],
+            [42, 38],
+            [18, 50],
+          ].map(([cx, cy], idx) => (
+            <circle key={idx} cx={cx} cy={cy} r="3.5" fill="#0B1A33" />
+          ))}
+        </svg>
+      )}
+    </div>
+  );
+}
+
+function BluishOrbitalCarousel() {
+  const [selected, setSelected] = useState(0);
+  const current = ORBITAL_CARDS[selected];
+  const radius = 215;
+
+  return (
+    <section
+      id="product"
+      className="mx-auto max-w-7xl scroll-mt-24 px-6 py-24"
+      aria-label="AegisBrain Core Modules"
+    >
+      <div className="grid items-center gap-14 lg:grid-cols-12">
+        <div className="lg:col-span-5">
+          <Eyebrow>Modular policy architecture</Eyebrow>
+          <h2 className="font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+            <SplitWords
+              text="Eight primitives rotating in lockstep."
+              italic={["lockstep."]}
+            />
+          </h2>
+          <p className="mt-5 text-lg leading-relaxed text-muted">
+            Every card in the wheel is a deterministic stage inside the gateway. Hover the wheel
+            to pause its orbit or click any card to inspect how it governs your agents.
+          </p>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={current.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.35, ease: EASE }}
+              className="mt-8 rounded-[28px] border border-white/95 bg-gradient-to-b from-white via-[#F5F9FF] to-[#E6F0FF] p-6 shadow-[0_30px_65px_-24px_rgba(43,84,240,0.35)]"
             >
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] font-bold uppercase text-cobalt">
-                  {s.label}
+                <span className="rounded-full bg-cobalt/10 px-3 py-1 font-mono text-xs font-semibold text-cobalt">
+                  {current.tag}
                 </span>
-                <span className="rounded-full bg-mist px-2.5 py-0.5 font-mono text-[10px] font-semibold text-ink">
-                  {s.metric}
+                <span className="font-mono text-xs text-muted">
+                  0{selected + 1} / 0{ORBITAL_CARDS.length}
                 </span>
               </div>
-              <p className="mt-2 font-display text-base font-semibold text-ink">{s.title}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted">{s.detail}</p>
-            </button>
-          );
-        })}
+              <h3 className="mt-3 font-display text-2xl font-semibold text-ink">
+                {current.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{current.detail}</p>
+
+              <div className="mt-5 flex flex-wrap gap-1.5">
+                {ORBITAL_CARDS.map((c, idx) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setSelected(idx)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                      selected === idx
+                        ? "bg-cobalt text-white shadow-sm"
+                        : "bg-white/80 text-muted hover:bg-white hover:text-ink"
+                    }`}
+                  >
+                    {c.tag}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Auto-Rotating Bluish-White Cards Ring */}
+        <div className="relative flex min-h-[540px] items-center justify-center lg:col-span-7">
+          {/* Soft ambient bluish halo behind the wheel */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute h-[420px] w-[420px] rounded-full opacity-75 blur-3xl"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(43,84,240,0.20) 0%, rgba(191,219,254,0.35) 55%, transparent 75%)",
+            }}
+          />
+
+          {/* Dashed orbital guide ring */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute h-[430px] w-[430px] rounded-full border border-dashed border-ice"
+          />
+
+          {/* Center Core Emblem */}
+          <div className="relative z-10 flex h-28 w-28 flex-col items-center justify-center rounded-[28px] border border-white bg-gradient-to-b from-white to-[#EAF2FF] text-center shadow-[0_20px_50px_rgba(43,84,240,0.28)]">
+            <Logo size={28} />
+            <span className="mt-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-cobalt">
+              AST Core
+            </span>
+          </div>
+
+          {/* Rotating Wheel Container */}
+          <div className="ab-wheel absolute inset-0 flex items-center justify-center">
+            {ORBITAL_CARDS.map((card, idx) => {
+              const rad = (card.angle * Math.PI) / 180;
+              const x = Math.cos(rad) * radius;
+              const y = Math.sin(rad) * radius;
+              return (
+                <div
+                  key={card.id}
+                  className=" absolute"
+                  style={{
+                    transform: `translate(${x}px, ${y}px)`,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelected(idx)}
+                    aria-label={card.title}
+                    className="ab-wheel-item block cursor-pointer focus:outline-none"
+                  >
+                    <OrbitalCardFace kind={card.kind} active={selected === idx} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 4: StaleRulebook (Scroll-Driven Scan Wipe & 3D Card Flips) */
+/* ------------------------------------------------------------------ */
+
+const RULEBOOK_CAPTIONS = [
+  "Monday. The handbook says 10%, and every agent follows it.",
+  "Tuesday. A manager decides in chat. The handbook and the agents still say 10%.",
+  "Seconds later. AegisBrain locks the rule. The handbook and every agent change together.",
+];
+
+const FLIP_AGENTS = [
+  { name: "Sales bot", t: 0.62 },
+  { name: "Support bot", t: 0.67 },
+  { name: "Storefront", t: 0.72 },
+];
+
+function AgentFlip({
+  name,
+  t,
+  p,
+}: {
+  name: string;
+  t: number;
+  p: MotionValue<number>;
+}) {
+  const rotateX = useTransform(p, [t, t + 0.07], [0, 180]);
+  const face = {
+    backfaceVisibility: "hidden" as const,
+    WebkitBackfaceVisibility: "hidden" as const,
+  };
+  return (
+    <div className="relative h-28" style={{ perspective: 900 }}>
+      <motion.div
+        className="relative h-full w-full"
+        style={{ rotateX, transformStyle: "preserve-3d" }}
+      >
+        <div
+          className="absolute inset-0 flex flex-col justify-between rounded-2xl border border-deny/30 bg-gradient-to-b from-white to-[#FDECEF] p-4"
+          style={face}
+        >
+          <p className="text-sm font-medium text-ink">{name}</p>
+          <p className="font-display text-3xl font-semibold text-deny">10%</p>
+          <p className="text-xs text-deny">Old rule</p>
+        </div>
+        <div
+          className="absolute inset-0 flex flex-col justify-between rounded-2xl border border-allow/30 bg-gradient-to-b from-white to-[#E3F6EC] p-4"
+          style={{ ...face, transform: "rotateX(180deg)" }}
+        >
+          <p className="text-sm font-medium text-ink">{name}</p>
+          <p className="font-display text-3xl font-semibold text-allow">5%</p>
+          <p className="text-xs text-allow">Current rule</p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function StaleRulebookScene() {
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start start", "end end"],
+  });
+  const p = useSpring(scrollYProgress, { stiffness: 120, damping: 28, mass: 0.4 });
+  const [stage, setStage] = useState(0);
+
+  useMotionValueEvent(p, "change", (v) => setStage(v < 0.14 ? 0 : v < 0.58 ? 1 : 2));
+
+  const bubbleX = useTransform(p, [0.16, 0.34], [160, 0]);
+  const bubbleScale = useTransform(p, [0.16, 0.34], [0.7, 1]);
+  const bubbleRot = useTransform(p, [0.16, 0.34], [9, 0]);
+  const bubbleOp = useTransform(p, [0.16, 0.24], [0, 1]);
+  const typing = useTransform(p, [0.1, 0.14, 0.2, 0.24], [0, 1, 1, 0]);
+  const wipe = useTransform(p, [0.58, 0.74], ["inset(0 100% 0 0)", "inset(0 0% 0 0)"]);
+  const sweepX = useTransform(p, [0.58, 0.74], ["0%", "100%"]);
+  const sweepOp = useTransform(p, [0.56, 0.6, 0.74, 0.78], [0, 1, 1, 0]);
+  const seal = useSpring(useTransform(p, [0.55, 0.6], [0, 1]), {
+    stiffness: 380,
+    damping: 18,
+  });
+
+  return (
+    <div ref={ref} className="relative" style={{ height: "300vh" }}>
+      <div className="sticky top-0 flex h-screen flex-col justify-center overflow-hidden px-6">
+        <div className="mx-auto w-full max-w-6xl">
+          <div className="h-[3.4rem] overflow-hidden md:h-[4.2rem]" aria-live="polite">
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={stage}
+                initial={{ y: "105%" }}
+                animate={{ y: "0%" }}
+                exit={{ y: "-105%" }}
+                transition={{ duration: 0.5, ease: EASE }}
+                className="font-display text-xl font-semibold leading-tight tracking-tight text-ink md:text-3xl"
+              >
+                {RULEBOOK_CAPTIONS[stage]}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+
+          <div className="mt-6 grid gap-5 md:mt-8 md:grid-cols-2 md:gap-8">
+            {/* Company Handbook with Laser Scan Wipe */}
+            <div className="relative overflow-hidden rounded-[26px] border border-white/90 bg-white shadow-[0_30px_70px_-26px_rgba(43,84,240,0.35)]">
+              <div className="p-6 md:p-8">
+                <p className="text-xs uppercase tracking-widest text-muted">
+                  Company handbook
+                </p>
+                <p className="mt-1 font-display text-xl font-semibold text-ink">
+                  4. Discounts
+                </p>
+                <div
+                  className="mt-3 rounded-xl p-4"
+                  style={{
+                    backgroundImage:
+                      "repeating-linear-gradient(transparent 0 27px, #E4ECFA 27px 28px)",
+                  }}
+                >
+                  <p className="text-muted">Agents may offer up to</p>
+                  <p className="font-display text-6xl font-semibold leading-none text-deny md:text-7xl">
+                    10%
+                  </p>
+                  <p className="mt-3 text-xs text-muted">Last edited three months ago</p>
+                </div>
+              </div>
+
+              <motion.div className="absolute inset-0 bg-white" style={{ clipPath: wipe }}>
+                <div className="p-6 md:p-8">
+                  <p className="text-xs uppercase tracking-widest text-muted">
+                    Company handbook
+                  </p>
+                  <p className="mt-1 font-display text-xl font-semibold text-ink">
+                    4. Discounts
+                  </p>
+                  <div
+                    className="mt-3 rounded-xl p-4"
+                    style={{
+                      backgroundImage:
+                        "repeating-linear-gradient(transparent 0 27px, #E4ECFA 27px 28px)",
+                    }}
+                  >
+                    <p className="text-muted">Agents may offer up to</p>
+                    <p className="font-display text-6xl font-semibold leading-none text-allow md:text-7xl">
+                      5%
+                    </p>
+                    <p className="mt-3 text-xs text-allow">
+                      Updated just now, with the original message attached
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.span
+                aria-hidden="true"
+                className="absolute inset-y-0 w-[3px] bg-cobalt shadow-[0_0_28px_6px_rgba(43,84,240,0.55)]"
+                style={{ left: sweepX, opacity: sweepOp }}
+              />
+            </div>
+
+            {/* Chat + Approval Seal */}
+            <div className="relative flex flex-col justify-center">
+              <p className="mb-3 text-sm text-muted">#policy-updates</p>
+              <div className="relative">
+                <motion.div
+                  className="flex gap-3"
+                  style={{
+                    x: bubbleX,
+                    scale: bubbleScale,
+                    rotate: bubbleRot,
+                    opacity: bubbleOp,
+                    transformOrigin: "100% 50%",
+                  }}
+                >
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cobalt font-display text-lg font-semibold text-white">
+                    P
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-ink">
+                      Priya <span className="font-normal text-muted">Finance Director</span>
+                    </p>
+                    <p className="mt-1.5 max-w-sm rounded-2xl rounded-tl-sm border border-white/90 bg-white px-5 py-3.5 text-[17px] leading-relaxed text-ink shadow-[0_18px_40px_-18px_rgba(43,84,240,0.4)]">
+                      Margin pressure. From today, discounts are capped at 5%.
+                    </p>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  className="absolute left-14 top-1 flex gap-1.5"
+                  style={{ opacity: typing }}
+                  aria-hidden="true"
+                >
+                  {[0, 1, 2].map((d) => (
+                    <motion.span
+                      key={d}
+                      className="h-2 w-2 rounded-full bg-cobalt/60"
+                      animate={{ y: [0, -5, 0] }}
+                      transition={{ duration: 0.7, repeat: Infinity, delay: d * 0.12 }}
+                    />
+                  ))}
+                </motion.div>
+              </div>
+
+              <motion.div
+                className="mt-7 inline-flex w-fit items-center gap-2 rounded-full border border-cobalt/30 bg-cobalt/10 px-4 py-2 text-sm font-medium text-cobalt"
+                style={{ scale: seal, opacity: seal, transformOrigin: "0% 50%" }}
+              >
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-cobalt text-[11px] text-white">
+                  &#10003;
+                </span>
+                Rule approved and locked
+              </motion.div>
+
+              <p className={`${serif.className} mt-4 max-w-xs text-2xl italic text-muted`}>
+                One decision. Everywhere at once.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-3 gap-3 md:mt-8 md:gap-6">
+            {FLIP_AGENTS.map((a) => (
+              <AgentFlip key={a.name} name={a.name} t={a.t} p={p} />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
+function StaleRulebook() {
+  const reduce = useReducedMotion();
+  if (reduce) {
+    return (
+      <section className="mx-auto max-w-4xl px-6 py-24">
+        <Eyebrow>The problem</Eyebrow>
+        <h2 className="font-display text-4xl font-semibold tracking-tight text-ink">
+          Rules change in chat. Agents keep the old rule.
+        </h2>
+        <p className="mt-5 text-lg text-muted">
+          A manager caps discounts at 5% in a message. The handbook and the agents still say 10%.
+          AegisBrain turns that message into an approved rule and every agent follows it together.
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section aria-label="How a decision in chat reaches every agent">
+      <div className="mx-auto max-w-7xl px-6 pt-24">
+        <Eyebrow>The problem</Eyebrow>
+        <h2 className="max-w-3xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+          Rules change in chat.{" "}
+          <span className={`${serif.className} italic text-cobalt`}>Agents do not.</span>
+        </h2>
+        <p className="mt-5 text-muted">Scroll to watch one decision travel.</p>
+      </div>
+      <StaleRulebookScene />
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------------ */
-/* Unfolding Portal Curtain & GateIntro                               */
+/* Section 5: Pipeline (Scroll-Drawn Curved SVG Circuit & Packet)     */
+/* ------------------------------------------------------------------ */
+
+const PIPELINE_NODES = [
+  { x: 80, y: 240, title: "A manager decides", body: "In a channel your company chose." },
+  {
+    x: 330,
+    y: 130,
+    title: "Authority check",
+    body: "Only the right roles can propose a rule.",
+  },
+  { x: 600, y: 290, title: "AI drafts it", body: "A draft, never a live rule." },
+  {
+    x: 870,
+    y: 130,
+    title: "A person approves",
+    body: "The original message sits beside the rule.",
+  },
+  {
+    x: 1120,
+    y: 240,
+    title: "Gateway enforces",
+    body: "Plain code checks every action.",
+  },
+];
+
+const PIPELINE_PATH =
+  "M80,240 C200,240 210,130 330,130 S470,290 600,290 S740,130 870,130 S1000,240 1120,240";
+const PW = 1200;
+const PH = 420;
+
+function PipelineStop({ i, prog }: { i: number; prog: MotionValue<number> }) {
+  const n = PIPELINE_NODES[i];
+  const a = i / (PIPELINE_NODES.length - 1);
+  const above = i % 2 === 1;
+  const on = useTransform(prog, [Math.max(0, a - 0.05), Math.min(1, a + 0.01)], [0, 1]);
+  const cardY = useTransform(on, [0, 1], [above ? -30 : 30, 0]);
+  const cardScale = useTransform(on, [0, 1], [0.88, 1]);
+  const cardRot = useTransform(on, [0, 1], [above ? -4 : 4, 0]);
+  const cardOp = useTransform(on, [0, 1], [0.3, 1]);
+  const dotScale = useTransform(on, [0, 1], [0.6, 1]);
+
+  return (
+    <div
+      className="absolute"
+      style={{
+        left: `${(n.x / PW) * 100}%`,
+        top: `${(n.y / PH) * 100}%`,
+        transform: "translate(-50%, -50%)",
+      }}
+    >
+      <motion.span
+        className="relative block h-6 w-6 rounded-full border-4 border-white bg-cobalt shadow-[0_8px_20px_-4px_rgba(43,84,240,0.6)]"
+        style={{ scale: dotScale }}
+      />
+      <motion.div
+        className="absolute left-1/2 w-52 -translate-x-1/2"
+        style={{
+          y: cardY,
+          scale: cardScale,
+          rotate: cardRot,
+          opacity: cardOp,
+          ...(above ? { bottom: "2rem" } : { top: "2rem" }),
+        }}
+      >
+        <div className="rounded-2xl border border-white/90 bg-white/90 p-4 text-center shadow-[0_24px_50px_-22px_rgba(43,84,240,0.4)] backdrop-blur-md">
+          <p className="text-xs font-semibold text-cobalt">Step {i + 1}</p>
+          <p className="mt-0.5 font-display text-lg font-semibold leading-tight tracking-tight text-ink">
+            {n.title}
+          </p>
+          <p className="mt-1 text-[13px] leading-snug text-muted">{n.body}</p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function PipelineCircuit() {
+  const wrap = useRef<HTMLDivElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: wrap,
+    offset: ["start 70%", "end 45%"],
+  });
+  const prog = useSpring(scrollYProgress, { stiffness: 90, damping: 24, mass: 0.5 });
+
+  const point = (v: number) => {
+    const el = pathRef.current;
+    if (!el) return { x: PIPELINE_NODES[0].x, y: PIPELINE_NODES[0].y };
+    const len = el.getTotalLength();
+    return el.getPointAtLength(Math.max(0, Math.min(1, v)) * len);
+  };
+
+  const cx = useTransform(prog, (v) => point(v).x);
+  const cy = useTransform(prog, (v) => point(v).y);
+
+  return (
+    <div
+      ref={wrap}
+      className="relative mx-auto hidden w-full max-w-[1200px] lg:block"
+      style={{ aspectRatio: `${PW}/${PH}` }}
+    >
+      <svg
+        viewBox={`0 0 ${PW} ${PH}`}
+        className="absolute inset-0 h-full w-full"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          ref={pathRef}
+          d={PIPELINE_PATH}
+          stroke="#D3E1FB"
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray="2 12"
+        />
+        <motion.path
+          d={PIPELINE_PATH}
+          stroke="#2B54F0"
+          strokeWidth="4"
+          strokeLinecap="round"
+          style={{ pathLength: prog }}
+        />
+        <motion.circle r="16" fill="#2B54F0" fillOpacity="0.18" style={{ cx, cy }} />
+        <motion.circle
+          r="7"
+          fill="#2B54F0"
+          stroke="#fff"
+          strokeWidth="3"
+          style={{ cx, cy }}
+        />
+      </svg>
+      {PIPELINE_NODES.map((_, i) => (
+        <PipelineStop key={i} i={i} prog={prog} />
+      ))}
+    </div>
+  );
+}
+
+function Pipeline() {
+  const reduce = useReducedMotion();
+  return (
+    <section
+      id="how"
+      className="mx-auto max-w-7xl scroll-mt-24 px-6 py-28"
+      aria-label="How a message becomes a checked action"
+    >
+      <Eyebrow>How it works</Eyebrow>
+      <h2 className="max-w-3xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+        <SplitWords text="From a message to a checked action" italic={["checked"]} />
+      </h2>
+      <p className="mt-5 max-w-xl text-lg text-muted">
+        Five steps. Nothing becomes a rule until a person approves it, and no AI decides whether
+        an agent&apos;s action is allowed.
+      </p>
+
+      <div className="mt-16">
+        {reduce ? (
+          <ol className="grid gap-4 lg:grid-cols-5">
+            {PIPELINE_NODES.map((n, i) => (
+              <li
+                key={n.title}
+                className="rounded-2xl border border-white/90 bg-white/90 p-4"
+              >
+                <p className="text-xs font-semibold text-cobalt">Step {i + 1}</p>
+                <p className="font-display text-lg font-semibold text-ink">{n.title}</p>
+                <p className="text-sm text-muted">{n.body}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <>
+            <PipelineCircuit />
+            <ol className="space-y-4 lg:hidden">
+              {PIPELINE_NODES.map((n, i) => (
+                <motion.li
+                  key={n.title}
+                  initial={{ x: i % 2 ? 60 : -60, rotate: i % 2 ? 3 : -3, opacity: 0 }}
+                  whileInView={{ x: 0, rotate: 0, opacity: 1 }}
+                  viewport={{ once: true, margin: "-10%" }}
+                  transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                  className="rounded-2xl border border-white/90 bg-white/90 p-5 shadow-[0_24px_50px_-26px_rgba(43,84,240,0.4)]"
+                >
+                  <p className="text-xs font-semibold text-cobalt">Step {i + 1}</p>
+                  <p className="font-display text-xl font-semibold tracking-tight text-ink">
+                    {n.title}
+                  </p>
+                  <p className="mt-1 text-muted">{n.body}</p>
+                </motion.li>
+              ))}
+            </ol>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 6: Anatomy of a Decision Record                            */
+/* ------------------------------------------------------------------ */
+
+const ANATOMY_PARTS = [
+  {
+    id: "decision",
+    n: 1,
+    label: "Decision",
+    value: "Blocked",
+    title: "One of three answers",
+    body: "Every agent action gets one answer: allowed, blocked, or held for a person. A held action waits until someone decides.",
+  },
+  {
+    id: "rule",
+    n: 2,
+    label: "Rule",
+    value: "promo_cap_v2",
+    title: "Which rule decided",
+    body: "The exact rule that decided this action, so nobody has to guess later.",
+  },
+  {
+    id: "version",
+    n: 3,
+    label: "Version",
+    value: "Version 2",
+    title: "Which version of the rule",
+    body: "Rules change. The record keeps the version that was in force at that moment.",
+  },
+  {
+    id: "approver",
+    n: 4,
+    label: "Approved by",
+    value: "Finance director, 09:41",
+    title: "Who locked the rule",
+    body: "A person with the right authority approved it. Their role and the time are kept with the rule.",
+  },
+  {
+    id: "record",
+    n: 5,
+    label: "Record",
+    value: "9f3a…c71e",
+    title: "A fingerprint",
+    body: "Each decision carries a fingerprint linked to the one before it. If a record is edited later, the chain no longer matches.",
+  },
+];
+
+function Anatomy() {
+  const [active, setActive] = useState(0);
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    if (touched) return;
+    const id = setInterval(() => setActive((a) => (a + 1) % ANATOMY_PARTS.length), 3600);
+    return () => clearInterval(id);
+  }, [touched]);
+
+  const pick = (i: number) => {
+    setTouched(true);
+    setActive(i);
+  };
+
+  const cur = ANATOMY_PARTS[active];
+
+  return (
+    <section
+      className="mx-auto max-w-7xl px-6 py-28"
+      aria-label="Anatomy of a decision record"
+    >
+      <Eyebrow>Proof for every decision</Eyebrow>
+      <h2 className="max-w-3xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+        <SplitWords text="Every answer leaves a record" italic={["record"]} />
+      </h2>
+
+      <div className="mt-14 grid items-center gap-10 lg:grid-cols-12">
+        <motion.div
+          className="lg:col-span-7"
+          initial={{ opacity: 0, y: 60, rotateX: 16 }}
+          whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
+          viewport={{ once: true, margin: "-10%" }}
+          transition={{ duration: 1.1, ease: EASE }}
+          style={{ transformPerspective: 1200 }}
+        >
+          <div
+            className="rounded-[30px] border border-white/90 bg-gradient-to-b from-white to-[#EAF1FF] p-6 md:p-8"
+            style={{
+              boxShadow:
+                "0 50px 90px -30px rgba(43,84,240,0.4), 0 12px 30px rgba(11,26,51,0.08)",
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ice pb-4">
+              <div>
+                <p className="font-mono text-[13px] text-cobalt">sales_bot_3</p>
+                <p className="font-mono text-lg font-semibold text-ink">discounts.apply</p>
+                <p className="text-sm text-muted">10% off, regular customer</p>
+              </div>
+              <span className="rounded-full border border-ice bg-white px-3 py-1 text-xs text-muted">
+                Example record
+              </span>
+            </div>
+
+            <ul className="mt-3">
+              {ANATOMY_PARTS.map((p, i) => (
+                <li key={p.id} className="relative">
+                  {active === i && (
+                    <motion.span
+                      layoutId="anatomy-highlight"
+                      className="absolute inset-0 rounded-2xl border border-cobalt/40 bg-cobalt/[0.07]"
+                      transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => pick(i)}
+                    aria-pressed={active === i}
+                    className="relative flex w-full items-center gap-4 rounded-2xl px-3 py-3.5 text-left"
+                  >
+                    <span className="relative grid h-8 w-8 shrink-0 place-items-center">
+                      {active === i && (
+                        <span
+                          className="ab-ring absolute inset-0 rounded-full bg-cobalt/40"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span
+                        className={`relative grid h-8 w-8 place-items-center rounded-full text-sm font-semibold transition-colors duration-300 ${
+                          active === i
+                            ? "bg-cobalt text-white"
+                            : "border border-ice bg-white text-muted"
+                        }`}
+                      >
+                        {p.n}
+                      </span>
+                    </span>
+                    <span className="w-28 shrink-0 text-sm text-muted">{p.label}</span>
+                    <span
+                      className={`min-w-0 flex-1 truncate font-mono text-[15px] ${
+                        p.id === "decision" ? "font-semibold text-deny" : "text-ink"
+                      }`}
+                    >
+                      {p.value}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </motion.div>
+
+        <div className="lg:col-span-5">
+          <div className="overflow-hidden" aria-live="polite">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={cur.id}
+                initial={{ x: 50, rotate: 1.5, opacity: 0 }}
+                animate={{ x: 0, rotate: 0, opacity: 1 }}
+                exit={{ x: -50, rotate: -1.5, opacity: 0 }}
+                transition={{ duration: 0.5, ease: EASE }}
+              >
+                <p className="text-sm font-semibold text-cobalt">
+                  {cur.n} of {ANATOMY_PARTS.length}
+                </p>
+                <h3 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-tight text-ink md:text-4xl">
+                  {cur.title}
+                </h3>
+                <p className="mt-4 text-lg leading-relaxed text-muted">{cur.body}</p>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          <div className="mt-8 flex gap-2" aria-hidden="true">
+            {ANATOMY_PARTS.map((p, i) => (
+              <span
+                key={p.id}
+                className="relative h-1 flex-1 overflow-hidden rounded-full bg-ice"
+              >
+                {active === i && !touched && (
+                  <motion.span
+                    key={`${i}-${touched}`}
+                    className="absolute inset-0 origin-left bg-cobalt"
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ duration: 3.6, ease: "linear" }}
+                  />
+                )}
+                {(touched ? active === i : i < active) && (
+                  <span className="absolute inset-0 bg-cobalt" />
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 7: DayScrubber ("One decision, two very different mornings")*/
+/* ------------------------------------------------------------------ */
+
+const NIGHT_MOMENTS = [
+  {
+    time: "2:00 AM",
+    label: "The CEO posts",
+    without: "The CEO posts in chat: match the competitor, 20% off until 8 AM.",
+    with: "The CEO posts in chat: match the competitor, 20% off until 8 AM.",
+  },
+  {
+    time: "2:01 AM",
+    label: "The rule spreads",
+    without: "Someone must update every agent by hand. Most still run the old rule.",
+    with: "A manager approves one card. Every agent and the storefront follow 20%.",
+  },
+  {
+    time: "8:00 AM",
+    label: "The sale ends",
+    without: "The sale is over, but two agents still offer 20%.",
+    with: "The rule expires by itself. Everything is back to the normal 5%.",
+  },
+  {
+    time: "Monday",
+    label: "The review",
+    without: "Nobody can say which rule applied, or who allowed it.",
+    with: "The log shows the rule, its version and who approved it.",
+  },
+];
+
+function getNightStates(m: number, withLayer: boolean): number[] {
+  const n = 12;
+  if (m === 0) return Array(n).fill(0);
+  if (m === 1) {
+    return withLayer
+      ? Array(n).fill(1)
+      : Array.from({ length: n }, (_, i) => (i < 3 ? 1 : 2));
+  }
+  if (m === 2) {
+    return withLayer
+      ? Array(n).fill(0)
+      : Array.from({ length: n }, (_, i) => (i === 4 || i === 9 ? 2 : 0));
+  }
+  return Array(n).fill(0);
+}
+
+const DOT_COLORS = ["#C9D7F2", "#0F9D6B", "#D42B4D"];
+
+function NightDots({ m, withLayer }: { m: number; withLayer: boolean }) {
+  const s = getNightStates(m, withLayer);
+  return (
+    <div className="grid grid-cols-6 gap-3 md:gap-4">
+      {s.map((st, i) => (
+        <motion.span
+          key={`${i}-${st}-${m}`}
+          className="aspect-square rounded-full"
+          style={{ backgroundColor: DOT_COLORS[st] }}
+          initial={{ scale: 0.4 }}
+          animate={{ scale: 1 }}
+          transition={{ type: "spring", stiffness: 520, damping: 15, delay: i * 0.035 }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function NightPanel({ m, withLayer }: { m: number; withLayer: boolean }) {
+  const text = withLayer ? NIGHT_MOMENTS[m].with : NIGHT_MOMENTS[m].without;
+  const s = getNightStates(m, withLayer);
+  const stale = s.filter((x) => x === 2).length;
+  const ok = s.filter((x) => x === 1).length;
+
+  return (
+    <div
+      className={`rounded-[28px] border p-6 md:p-8 ${
+        withLayer
+          ? "border-allow/30 bg-gradient-to-b from-white to-[#E8F7EF]"
+          : "border-deny/25 bg-gradient-to-b from-white to-[#FDEEF1]"
+      }`}
+      style={{ boxShadow: "0 40px 80px -36px rgba(43,84,240,0.32)" }}
+    >
+      <p className={`text-sm font-semibold ${withLayer ? "text-allow" : "text-deny"}`}>
+        {withLayer ? "With AegisBrain" : "Without a rule layer"}
+      </p>
+      <div className="mt-3 h-[8.2rem] overflow-hidden md:h-[6.6rem]">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={m}
+            initial={{ y: 40, rotateX: -30, opacity: 0 }}
+            animate={{ y: 0, rotateX: 0, opacity: 1 }}
+            exit={{ y: -30, rotateX: 30, opacity: 0 }}
+            transition={{ duration: 0.45, ease: EASE }}
+            style={{ transformPerspective: 700 }}
+            className="font-display text-xl font-semibold leading-snug tracking-tight text-ink md:text-2xl"
+          >
+            {text}
+          </motion.p>
+        </AnimatePresence>
+      </div>
+      <div className="mt-6">
+        <NightDots m={m} withLayer={withLayer} />
+      </div>
+      <p className="mt-5 min-h-[1.5rem] text-sm text-muted">
+        {m === 3
+          ? withLayer
+            ? "Rule, version, approver: all on record."
+            : "No record to check."
+          : `${ok} following the new rule${stale ? `, ${stale} on an old one` : ""}`}
+      </p>
+    </div>
+  );
+}
+
+function DayScrubber() {
+  const track = useRef<HTMLDivElement>(null);
+  const t = useMotionValue(0);
+  const [m, setM] = useState(0);
+  const [touched, setTouched] = useState(false);
+  const left = useTransform(t, [0, 3], ["0%", "100%"]);
+  const fill = useTransform(t, [0, 3], [0, 1]);
+
+  useMotionValueEvent(t, "change", (v) =>
+    setM(Math.max(0, Math.min(3, Math.round(v))))
+  );
+
+  useEffect(() => {
+    if (touched) return;
+    const id = setInterval(() => {
+      const next = (Math.round(t.get()) + 1) % 4;
+      animate(t, next, { type: "spring", stiffness: 120, damping: 20 });
+    }, 3400);
+    return () => clearInterval(id);
+  }, [touched, t]);
+
+  const fromX = (clientX: number) => {
+    const r = track.current?.getBoundingClientRect();
+    if (!r) return 0;
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * 3;
+  };
+
+  return (
+    <section
+      className="mx-auto max-w-7xl px-6 py-28"
+      aria-label="One night, with and without AegisBrain"
+    >
+      <Eyebrow>An example night</Eyebrow>
+      <h2 className="max-w-3xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+        <SplitWords
+          text="One decision, two very different mornings"
+          italic={["mornings"]}
+        />
+      </h2>
+      <p className="mt-5 max-w-xl text-lg text-muted">
+        Each dot is an agent. Green follows the new rule, red is on an old one. Drag the handle
+        through the night.
+      </p>
+
+      <div className="mt-12 grid gap-6 md:grid-cols-2">
+        <NightPanel m={m} withLayer={false} />
+        <NightPanel m={m} withLayer />
+      </div>
+
+      <div className="mx-auto mt-12 max-w-3xl">
+        <div
+          ref={track}
+          className="relative h-12 touch-none select-none"
+          onPointerDown={(e) => {
+            setTouched(true);
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            t.set(fromX(e.clientX));
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons === 0) return;
+            t.set(fromX(e.clientX));
+          }}
+          onPointerUp={() =>
+            animate(t, Math.round(t.get()), {
+              type: "spring",
+              stiffness: 260,
+              damping: 24,
+            })
+          }
+        >
+          <div className="absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-ice" />
+          <motion.div
+            className="absolute left-0 right-0 top-1/2 h-1.5 origin-left -translate-y-1/2 rounded-full bg-cobalt"
+            style={{ scaleX: fill }}
+          />
+          {NIGHT_MOMENTS.map((mo, i) => (
+            <button
+              key={mo.time}
+              type="button"
+              onClick={() => {
+                setTouched(true);
+                animate(t, i, { type: "spring", stiffness: 200, damping: 22 });
+              }}
+              className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ice"
+              style={{ left: `${(i / 3) * 100}%` }}
+              aria-label={`Go to ${mo.time}`}
+            />
+          ))}
+          <motion.div
+            role="slider"
+            tabIndex={0}
+            aria-label="Time of night"
+            aria-valuemin={0}
+            aria-valuemax={3}
+            aria-valuenow={m}
+            aria-valuetext={NIGHT_MOMENTS[m].time}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") {
+                animate(t, Math.min(3, m + 1), {
+                  type: "spring",
+                  stiffness: 200,
+                  damping: 22,
+                });
+              }
+              if (e.key === "ArrowLeft") {
+                animate(t, Math.max(0, m - 1), {
+                  type: "spring",
+                  stiffness: 200,
+                  damping: 22,
+                });
+              }
+              setTouched(true);
+            }}
+            className="absolute top-1/2 grid h-9 w-9 -translate-x-1/2 -translate-y-1/2 cursor-grab place-items-center rounded-full border-4 border-white bg-cobalt shadow-[0_12px_28px_-6px_rgba(43,84,240,0.7)] active:cursor-grabbing"
+            style={{ left }}
+            whileTap={{ scale: 1.15 }}
+          >
+            <span className="h-2 w-2 rounded-full bg-white" />
+          </motion.div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 text-center text-sm">
+          {NIGHT_MOMENTS.map((mo, i) => (
+            <span
+              key={mo.time}
+              className={`transition-colors duration-300 ${
+                i === m ? "font-semibold text-ink" : "text-muted"
+              }`}
+            >
+              {mo.time}
+              <span className="block text-xs font-normal">{mo.label}</span>
+            </span>
+          ))}
+        </div>
+        <p className="mt-6 text-center text-xs text-muted">
+          Illustration of an example night. Not live data.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 8: Interactive Gateway Playground (Connected to FastAPI)   */
+/* ------------------------------------------------------------------ */
+
+function Playground({
+  rules,
+  onResult,
+}: {
+  rules: Rule[];
+  onResult: (d: Decision) => void;
+}) {
+  const [selected, setSelected] = useState(SCENARIOS[0].id);
+  const [running, setRunning] = useState(false);
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const scenario = SCENARIOS.find((s) => s.id === selected) ?? SCENARIOS[0];
+
+  const run = async () => {
+    setRunning(true);
+    setDecision(null);
+    const result = await evaluateGateway(scenario.call, rules);
+    setTimeout(() => {
+      setDecision(result);
+      setRunning(false);
+      onResult(result);
+    }, 200);
+  };
+
+  const ui = decision ? VERDICT_UPPER_UI[decision.verdict] : null;
+
+  return (
+    <section id="try" className="mx-auto max-w-7xl scroll-mt-24 px-6 py-24">
+      <Eyebrow>Interactive gateway</Eyebrow>
+      <h2 className="max-w-3xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+        <SplitWords text="Test an agent action right now" italic={["now"]} />
+      </h2>
+      <p className="mt-4 max-w-xl text-lg text-muted">
+        Pick something an agent might do. The gateway checks it against your active policies and
+        auto-corrects outdated requests in milliseconds.
+      </p>
+
+      <div className="mt-12 grid gap-8 lg:grid-cols-12">
+        <div className="space-y-3 lg:col-span-5">
+          <div role="radiogroup" aria-label="Agent action" className="space-y-2.5">
+            {SCENARIOS.map((s) => {
+              const active = s.id === selected;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    setSelected(s.id);
+                    setDecision(null);
+                  }}
+                  className={`group flex w-full items-start justify-between gap-4 rounded-2xl border p-4 text-left transition-all duration-200 ${
+                    active
+                      ? "border-cobalt bg-white shadow-[0_12px_30px_rgba(43,84,240,0.14)] -translate-y-0.5"
+                      : "border-white/80 bg-white/75 hover:border-cobalt/30 hover:bg-white"
+                  }`}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <span
+                      className={`mt-1.5 h-3 w-3 shrink-0 rounded-full border-2 transition-all ${
+                        active
+                          ? "border-cobalt bg-cobalt shadow-[0_0_10px_rgba(43,84,240,0.5)]"
+                          : "border-ice bg-white"
+                      }`}
+                    />
+                    <span>
+                      <span className="block font-display text-base font-semibold text-ink">
+                        {s.title}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted">
+                        {s.who} · {s.note}
+                      </span>
+                    </span>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-mist px-2.5 py-0.5 text-[10px] font-semibold text-cobalt">
+                    {s.badge}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mb-2 pt-4 text-xs font-semibold uppercase tracking-wider text-cobalt">
+            Agent Action Payload
+          </p>
+          <pre className="overflow-x-auto rounded-2xl border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-4 font-mono text-[12px] leading-relaxed text-ink shadow-sm">
+            {JSON.stringify(scenario.call, null, 2)}
+          </pre>
+
+          <Magnetic className="w-full" strength={0.2}>
+            <button
+              type="button"
+              onClick={run}
+              disabled={running}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-cobalt px-6 py-4 font-semibold text-white shadow-lg shadow-cobalt/25 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
+            >
+              {running ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Evaluating Policy...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 fill-white" /> Check this action
+                </>
+              )}
+            </button>
+          </Magnetic>
+        </div>
+
+        <div className="lg:col-span-7">
+          <div
+            className="flex min-h-[500px] flex-col rounded-[32px] border border-white/90 bg-gradient-to-b from-white/95 to-[#EAF1FF]/95 p-6 md:p-8"
+            style={{
+              boxShadow:
+                "0 40px 80px -28px rgba(43,84,240,0.32), 0 10px 26px rgba(11,26,51,0.06)",
+            }}
+          >
+            <AnimatePresence mode="wait">
+              {decision && ui ? (
+                <motion.div
+                  key={decision.at}
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.28, ease: EASE }}
+                  className="flex flex-1 flex-col"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className={`flex items-center gap-3 ${ui.text}`}>
+                      {decision.verdict === "DENY" && <Lock className="h-7 w-7" />}
+                      {decision.verdict === "HOLD" && <AlertTriangle className="h-7 w-7" />}
+                      {decision.verdict === "ALLOW" && <CheckCircle2 className="h-7 w-7" />}
+                      <p className="font-display text-3xl font-semibold tracking-tight md:text-4xl">
+                        {ui.label}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-cobalt/20 bg-white px-3.5 py-1 font-mono text-xs font-semibold text-cobalt shadow-sm">
+                      {decision.ms.toFixed(2)} ms · {decision.via}
+                    </span>
+                  </div>
+
+                  <p className="mt-4 max-w-xl text-sm leading-relaxed text-ink md:text-base">
+                    {decision.correctionNote ?? decision.reason}
+                  </p>
+
+                  {decision.correctedParams && (
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-deny/25 bg-white p-3.5">
+                        <p className="text-[11px] font-semibold uppercase text-deny">
+                          × Agent Requested (Outdated)
+                        </p>
+                        <pre className="mt-1 font-mono text-xs text-ink">
+                          {JSON.stringify(decision.params, null, 2)}
+                        </pre>
+                      </div>
+                      <div className="rounded-2xl border border-allow/30 bg-white p-3.5">
+                        <p className="text-[11px] font-semibold uppercase text-allow">
+                          ✓ Auto-Corrected by Gateway
+                        </p>
+                        <pre className="mt-1 font-mono text-xs text-ink">
+                          {JSON.stringify(decision.correctedParams, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-auto pt-5">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-cobalt">
+                      Verified Decision Record
+                    </p>
+                    <pre className="overflow-x-auto rounded-2xl border border-ice bg-white/95 p-4 font-mono text-[12px] leading-relaxed text-ink shadow-inner">
+                      {JSON.stringify(
+                        {
+                          request_id: decision.requestId,
+                          agent: scenario.call.agent,
+                          action: scenario.call.action,
+                          verdict: decision.verdict,
+                          rule: decision.ruleId ?? "default_allow",
+                          checked_in_ms: Number(decision.ms.toFixed(2)),
+                          sha256: decision.auditHash.slice(0, 24),
+                        },
+                        null,
+                        2
+                      )}
+                    </pre>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="idle"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex flex-1 flex-col items-center justify-center text-center"
+                >
+                  <div className="grid h-16 w-16 place-items-center rounded-2xl border border-ice bg-mist text-cobalt shadow-sm">
+                    <Fingerprint className="h-8 w-8" />
+                  </div>
+                  <p className="mt-5 font-display text-2xl font-semibold text-ink">
+                    Gateway Ready for Inspection
+                  </p>
+                  <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted">
+                    Choose an agent scenario on the left, then click{" "}
+                    <strong className="text-ink">Check this action</strong>.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 9: Principles + Looping SVG Icons + Strike-Through Limits  */
+/* ------------------------------------------------------------------ */
+
+function DraftIcon() {
+  return (
+    <svg viewBox="0 0 64 64" className="h-16 w-16" fill="none" aria-hidden="true">
+      <rect
+        x="10"
+        y="8"
+        width="44"
+        height="48"
+        rx="10"
+        stroke="#2B54F0"
+        strokeWidth="3"
+      />
+      {[24, 34, 44].map((y, i) => (
+        <motion.path
+          key={y}
+          d={`M20 ${y} H${i === 2 ? 36 : 44}`}
+          stroke="#2B54F0"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: [0, 1, 1, 0] }}
+          transition={{
+            duration: 3.4,
+            repeat: Infinity,
+            delay: i * 0.45,
+            times: [0, 0.3, 0.8, 1],
+            ease: "easeInOut",
+          }}
+        />
+      ))}
+    </svg>
+  );
+}
+
+function ApproveIcon() {
+  return (
+    <svg viewBox="0 0 64 64" className="h-16 w-16" fill="none" aria-hidden="true">
+      <circle cx="32" cy="32" r="24" stroke="#D3E1FB" strokeWidth="3" />
+      <motion.circle
+        cx="32"
+        cy="32"
+        r="24"
+        stroke="#2B54F0"
+        strokeWidth="3"
+        strokeLinecap="round"
+        style={{ rotate: -90, originX: "50%", originY: "50%" }}
+        animate={{ pathLength: [0, 1, 1, 0] }}
+        transition={{
+          duration: 3.4,
+          repeat: Infinity,
+          times: [0, 0.4, 0.85, 1],
+          ease: "easeInOut",
+        }}
+      />
+      <motion.path
+        d="M21 33 L29 41 L44 24"
+        stroke="#0F9D6B"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        animate={{ pathLength: [0, 0, 1, 1, 0] }}
+        transition={{
+          duration: 3.4,
+          repeat: Infinity,
+          times: [0, 0.3, 0.5, 0.85, 1],
+          ease: "easeInOut",
+        }}
+      />
+    </svg>
+  );
+}
+
+function EnforceIcon() {
+  return (
+    <svg viewBox="0 0 64 64" className="h-16 w-16" fill="none" aria-hidden="true">
+      <path
+        d="M32 6 L54 14 V32 C54 45 45 54 32 58 C19 54 10 45 10 32 V14 Z"
+        stroke="#2B54F0"
+        strokeWidth="3"
+        strokeLinejoin="round"
+      />
+      <motion.path
+        d="M18 0 H46"
+        stroke="#2B54F0"
+        strokeWidth="3"
+        strokeLinecap="round"
+        animate={{ y: [14, 52, 14], opacity: [0, 1, 0] }}
+        transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut" }}
+      />
+    </svg>
+  );
+}
+
+const PRINCIPLE_CARDS = [
+  {
+    icon: <DraftIcon />,
+    title: "AI drafts",
+    body: "It reads the message and proposes a rule. A draft is all it can ever make. Unclear message? It asks a question.",
+  },
+  {
+    icon: <ApproveIcon />,
+    title: "People approve",
+    body: "A person with the right authority reads the original message beside the rule, then locks it, edits it or ignores it.",
+  },
+  {
+    icon: <EnforceIcon />,
+    title: "Code enforces",
+    body: "Plain code checks every agent action against the locked rules. No AI is in that path, so the same request always gets the same answer.",
+  },
+];
+
+function SpotCard({ i, children }: { i: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const rx = useMotionValue(0);
+  const ry = useMotionValue(0);
+  const srx = useSpring(rx, { stiffness: 180, damping: 18 });
+  const sry = useSpring(ry, { stiffness: 180, damping: 18 });
+
+  return (
+    <motion.div
+      initial={{ x: (1 - i) * 140, y: 60, rotate: (i - 1) * 9, scale: 0.9, opacity: 0 }}
+      whileInView={{ x: 0, y: 0, rotate: 0, scale: 1, opacity: 1 }}
+      viewport={{ once: true, margin: "-10%" }}
+      transition={{ type: "spring", stiffness: 90, damping: 16, delay: i * 0.12 }}
+      style={{ perspective: 900 }}
+    >
+      <motion.div
+        ref={ref}
+        className="group relative h-full overflow-hidden rounded-[28px] border border-white/90 bg-gradient-to-b from-white to-[#EDF3FF] p-7"
+        style={{
+          rotateX: srx,
+          rotateY: sry,
+          transformStyle: "preserve-3d",
+          boxShadow:
+            "0 40px 80px -34px rgba(43,84,240,0.4), 0 10px 26px rgba(11,26,51,0.07)",
+        }}
+        onPointerMove={(e) => {
+          if (reduce || !ref.current) return;
+          const r = ref.current.getBoundingClientRect();
+          const px = (e.clientX - r.left) / r.width;
+          const py = (e.clientY - r.top) / r.height;
+          ry.set((px - 0.5) * 12);
+          rx.set((py - 0.5) * -10);
+          ref.current.style.setProperty("--mx", `${e.clientX - r.left}px`);
+          ref.current.style.setProperty("--my", `${e.clientY - r.top}px`);
+        }}
+        onPointerLeave={() => {
+          rx.set(0);
+          ry.set(0);
+        }}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+          style={{
+            background:
+              "radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(43,84,240,0.16), transparent 65%)",
+          }}
+        />
+        <div className="relative" style={{ transform: "translateZ(30px)" }}>
+          {children}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+const HONEST_LIMITS = [
+  ["Read private messages", "Only the channels your administrator connects."],
+  ["Let AI approve a rule", "A person with authority locks every rule."],
+  ["Put AI in the enforcement path", "Plain code decides, the same way every time."],
+  ["Claim certifications we do not have", "No independent audit yet. We say so."],
+];
+
+function Principles() {
+  return (
+    <section className="mx-auto max-w-7xl px-6 py-28" aria-label="Principles">
+      <Eyebrow>Three ideas</Eyebrow>
+      <h2 className="max-w-3xl font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+        <SplitWords text="AI writes. People decide. Code enforces." italic={["decide."]} />
+      </h2>
+
+      <div className="mt-14 grid gap-6 md:grid-cols-3">
+        {PRINCIPLE_CARDS.map((c, i) => (
+          <SpotCard key={c.title} i={i}>
+            {c.icon}
+            <h3 className="mt-5 font-display text-2xl font-semibold tracking-tight text-ink">
+              {c.title}
+            </h3>
+            <p className="mt-2 leading-relaxed text-muted">{c.body}</p>
+          </SpotCard>
+        ))}
+      </div>
+
+      <div className="mt-24 grid gap-10 lg:grid-cols-12">
+        <div className="lg:col-span-4">
+          <Eyebrow>Straight talk</Eyebrow>
+          <h3 className="font-display text-3xl font-semibold leading-tight tracking-tight text-ink md:text-4xl">
+            What we do not do
+          </h3>
+        </div>
+        <ul className="divide-y divide-ice border-y border-ice lg:col-span-8">
+          {HONEST_LIMITS.map(([no, yes], i) => (
+            <motion.li
+              key={no}
+              className="grid gap-2 py-6 md:grid-cols-2 md:gap-8"
+              initial="hidden"
+              whileInView="shown"
+              viewport={{ once: true, margin: "-12%" }}
+              transition={{ delayChildren: i * 0.08 }}
+            >
+              <p className="relative w-fit font-display text-xl font-semibold tracking-tight text-muted">
+                {no}
+                <motion.span
+                  className="absolute left-0 top-1/2 h-[2px] w-full origin-left bg-deny"
+                  variants={{ hidden: { scaleX: 0 }, shown: { scaleX: 1 } }}
+                  transition={{ duration: 0.7, ease: EASE, delay: 0.5 + i * 0.08 }}
+                />
+              </p>
+              <motion.p
+                className="text-lg text-ink"
+                variants={{
+                  hidden: { x: 24, opacity: 0 },
+                  shown: { x: 0, opacity: 1 },
+                }}
+                transition={{ duration: 0.7, ease: EASE, delay: 0.9 + i * 0.08 }}
+              >
+                {yes}
+              </motion.p>
+            </motion.li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 10: Editorial FAQ + FinalCta                               */
+/* ------------------------------------------------------------------ */
+
+function FaqSection() {
+  const [open, setOpen] = useState<number | null>(0);
+  const items = (
+    faqs as Array<{ q?: string; question?: string; a?: string; answer?: string }>
+  ).slice(0, 7);
+
+  return (
+    <section
+      id="faq"
+      className="mx-auto max-w-7xl scroll-mt-24 px-6 py-28"
+      aria-label="Questions"
+    >
+      <div className="grid gap-12 lg:grid-cols-12">
+        <div className="lg:col-span-4">
+          <Eyebrow>Questions</Eyebrow>
+          <h2 className="font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-5xl">
+            <SplitWords text="Plain answers" italic={["answers"]} />
+          </h2>
+          <a
+            href="#contact"
+            className="mt-6 inline-block font-medium text-cobalt underline underline-offset-4"
+          >
+            Ask us directly
+          </a>
+        </div>
+
+        <ul className="lg:col-span-8">
+          {items.map((f, i) => {
+            const isOpen = open === i;
+            const qText = f.q ?? f.question ?? "";
+            const aText = f.a ?? f.answer ?? "";
+            return (
+              <motion.li
+                key={i}
+                layout
+                initial={{ x: 40, opacity: 0 }}
+                whileInView={{ x: 0, opacity: 1 }}
+                viewport={{ once: true, margin: "-8%" }}
+                transition={{ duration: 0.7, ease: EASE, delay: i * 0.05 }}
+                className="relative border-b border-ice"
+              >
+                {isOpen && (
+                  <motion.span
+                    layoutId="faq-bar"
+                    className="absolute bottom-0 left-0 top-0 w-[3px] rounded-full bg-cobalt"
+                    transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setOpen(isOpen ? null : i)}
+                  aria-expanded={isOpen}
+                  className="flex w-full items-start gap-5 py-6 pl-5 pr-2 text-left"
+                >
+                  <span
+                    className={`font-mono text-sm transition-colors ${
+                      isOpen ? "text-cobalt" : "text-muted"
+                    }`}
+                  >
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span className="flex-1 font-display text-xl font-semibold tracking-tight text-ink md:text-2xl">
+                    {qText}
+                  </span>
+                  <motion.span
+                    className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-ice bg-white/80 text-lg leading-none"
+                    animate={{
+                      rotate: isOpen ? 135 : 0,
+                      backgroundColor: isOpen ? "#2B54F0" : "rgba(255,255,255,0.8)",
+                      color: isOpen ? "#fff" : "#0B1A33",
+                    }}
+                    transition={{ type: "spring", stiffness: 380, damping: 24 }}
+                    aria-hidden="true"
+                  >
+                    +
+                  </motion.span>
+                </button>
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div
+                      initial={{ height: 0 }}
+                      animate={{ height: "auto" }}
+                      exit={{ height: 0 }}
+                      transition={{ duration: 0.5, ease: EASE }}
+                      className="overflow-hidden"
+                    >
+                      <motion.p
+                        initial={{ y: 20, rotateX: -12 }}
+                        animate={{ y: 0, rotateX: 0 }}
+                        transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
+                        style={{ transformPerspective: 700 }}
+                        className="max-w-2xl pb-7 pl-14 pr-6 text-lg leading-relaxed text-muted"
+                      >
+                        {aText}
+                      </motion.p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.li>
+            );
+          })}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+const CTA_BITS = [
+  { l: "8%", t: "20%", s: 10, d: 0 },
+  { l: "22%", t: "74%", s: 16, d: 1.2 },
+  { l: "46%", t: "12%", s: 8, d: 2.1 },
+  { l: "68%", t: "80%", s: 12, d: 0.6 },
+  { l: "86%", t: "26%", s: 18, d: 1.7 },
+  { l: "93%", t: "68%", s: 9, d: 2.6 },
+];
+
+function FinalCta({ onOpenPortal }: { onOpenPortal: () => void }) {
+  return (
+    <section className="mx-auto max-w-7xl px-6 pb-20 pt-12">
+      <motion.div
+        className="relative overflow-hidden rounded-[40px] border border-white/90 bg-gradient-to-br from-white via-[#EAF1FF] to-[#CFE0FF] px-8 py-20 md:px-16 md:py-28"
+        style={{ boxShadow: "0 70px 120px -50px rgba(43,84,240,0.55)" }}
+        initial={{ clipPath: "inset(18% 12% 18% 12% round 60px)", scale: 0.96 }}
+        whileInView={{ clipPath: "inset(0% 0% 0% 0% round 40px)", scale: 1 }}
+        viewport={{ once: true, margin: "-12%" }}
+        transition={{ duration: 1.3, ease: EASE }}
+      >
+        <div
+          aria-hidden="true"
+          className="ab-conic pointer-events-none absolute -right-1/4 -top-1/2 h-[140%] w-[70%] rounded-full opacity-60"
+          style={{
+            background:
+              "conic-gradient(from 0deg, rgba(43,84,240,0.0), rgba(43,84,240,0.28), rgba(125,160,255,0.0), rgba(43,84,240,0.2), rgba(43,84,240,0.0))",
+          }}
+        />
+        {CTA_BITS.map((b, i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="ab-float pointer-events-none absolute rounded-full bg-white/80 shadow-[0_0_30px_rgba(43,84,240,0.35)]"
+            style={{
+              left: b.l,
+              top: b.t,
+              width: b.s,
+              height: b.s,
+              animationDelay: `${b.d}s`,
+            }}
+          />
+        ))}
+        <div className="relative max-w-3xl">
+          <h2 className="font-display text-4xl font-semibold leading-[1.02] tracking-[-0.03em] text-ink md:text-6xl">
+            <SplitWords
+              text="Start with a pilot that blocks nothing and shows what we would have stopped."
+              italic={["nothing"]}
+            />
+          </h2>
+          <p className="mt-6 max-w-xl text-lg text-muted">
+            Two weeks in shadow mode. A clear report at the end. You decide what happens next.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center gap-7">
+            <Magnetic strength={0.35}>
+              <button
+                type="button"
+                onClick={onOpenPortal}
+                className="ab-shine-wrap relative inline-block overflow-hidden rounded-full bg-ink px-8 py-4 font-medium text-paper shadow-[0_20px_44px_-14px_rgba(11,26,51,0.7)]"
+              >
+                <span
+                  className="ab-shine absolute inset-y-0 left-0 w-1/3 bg-white/25"
+                  aria-hidden="true"
+                />
+                <span className="relative">Open Manager Verification Portal</span>
+              </button>
+            </Magnetic>
+            <a href="#contact" className="group relative font-medium text-ink">
+              Register organization below
+              <span className="absolute -bottom-1.5 left-0 h-[2px] w-full origin-left scale-x-[0.25] bg-cobalt transition-transform duration-500 group-hover:scale-x-100" />
+            </a>
+          </div>
+        </div>
+      </motion.div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Unfolding Portal Curtain & Fast GateIntro                          */
 /* ------------------------------------------------------------------ */
 
 function UnfoldingCurtain({
@@ -899,34 +2882,34 @@ function UnfoldingCurtain({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.32 }}
+          transition={{ duration: 0.3 }}
           className="fixed inset-0 z-[110] flex items-center justify-center overflow-hidden"
         >
           <motion.div
             initial={{ y: "-100%" }}
             animate={{ y: "0%" }}
             exit={{ y: "-102%" }}
-            transition={{ duration: 0.65, ease: EASE_DRAMATIC }}
-            className="blueprint absolute inset-x-0 top-0 h-1/2 border-b border-cobalt/25 bg-gradient-to-b from-white via-[#F3F8FF] to-[#E5EFFF]"
+            transition={{ duration: 0.6, ease: EASE_DRAMATIC }}
+            className="blueprint absolute inset-x-0 top-0 h-1/2 border-b border-cobalt/20 bg-gradient-to-b from-white to-[#EAF2FF]"
           />
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: "0%" }}
             exit={{ y: "102%" }}
-            transition={{ duration: 0.65, ease: EASE_DRAMATIC }}
-            className="blueprint absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-white via-[#F3F8FF] to-[#E5EFFF]"
+            transition={{ duration: 0.6, ease: EASE_DRAMATIC }}
+            className="blueprint absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-white to-[#EAF2FF]"
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 18 }}
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 1.05, y: -18 }}
-            transition={{ duration: 0.42, delay: 0.14, ease: EASE_OUT_EXPO }}
-            className="relative z-10 max-w-lg rounded-3xl border border-ice bg-white/90 px-8 py-7 text-center shadow-[0_24px_60px_rgba(43,84,240,0.22)] backdrop-blur-xl"
+            exit={{ opacity: 0, scale: 1.04, y: -16 }}
+            transition={{ duration: 0.38, delay: 0.12, ease: EASE }}
+            className="relative z-10 max-w-lg rounded-3xl border border-ice bg-white/95 px-8 py-7 text-center shadow-[0_24px_60px_rgba(43,84,240,0.22)]"
           >
-            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-cobalt/20 bg-gradient-to-b from-white to-mist shadow-lg shadow-cobalt/15">
+            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-cobalt/20 bg-white shadow-lg shadow-cobalt/15">
               <Logo size={28} />
             </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cobalt">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cobalt">
               {subtitle}
             </p>
             <h3 className="mt-2 font-display text-3xl font-semibold tracking-tight text-ink md:text-4xl">
@@ -936,133 +2919,6 @@ function UnfoldingCurtain({
         </motion.div>
       )}
     </AnimatePresence>
-  );
-}
-
-const GATE_QUOTES = [
-  {
-    tag: "01 · Operational Principle",
-    quote: "Autonomy without boundaries is a liability.",
-    sub: "Loading compiled AST rule definitions into the gateway...",
-  },
-  {
-    tag: "02 · Separation of Powers",
-    quote: "Decisions belong to people. Enforcement belongs to code.",
-    sub: "Verifying manager authority channels & role scopes...",
-  },
-  {
-    tag: "03 · Sub-Millisecond Execution",
-    quote: "Every agent action checked before a single rupee moves.",
-    sub: "Synchronizing SHA-256 audit ledger & opening gate...",
-  },
-];
-
-function GateIntro({ onDone }: { onDone: () => void }) {
-  const [n, setN] = useState(0);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    const controls = animate(0, 100, {
-      duration: 2.4,
-      ease: [0.65, 0, 0.35, 1],
-      onUpdate: (v) => setN(Math.round(v)),
-      onComplete: () => {
-        timers.push(setTimeout(() => setOpen(true), 200));
-        timers.push(setTimeout(onDone, 200 + 880));
-      },
-    });
-    return () => {
-      controls.stop();
-      timers.forEach(clearTimeout);
-    };
-  }, [onDone]);
-
-  const quoteIndex = n < 36 ? 0 : n < 74 ? 1 : 2;
-  const activeQuote = GATE_QUOTES[quoteIndex];
-
-  return (
-    <div className="fixed inset-0 z-[100]" role="status" aria-label="Loading AegisBrain">
-      <motion.div
-        className="blueprint absolute inset-x-0 top-0 h-1/2 bg-paper"
-        animate={{ y: open ? "-101%" : "0%" }}
-        transition={{ duration: 0.9, ease: EASE_DRAMATIC }}
-      />
-      <motion.div
-        className="blueprint absolute inset-x-0 bottom-0 h-1/2 bg-paper"
-        animate={{ y: open ? "101%" : "0%" }}
-        transition={{ duration: 0.9, ease: EASE_DRAMATIC }}
-      />
-      <motion.div
-        className="absolute inset-0"
-        animate={{ opacity: open ? 0 : 1 }}
-        transition={{ duration: 0.28 }}
-      >
-        <div className="absolute left-6 right-6 top-6 flex items-center justify-between md:left-12 md:right-12 md:top-10">
-          <div className="flex items-center gap-2.5">
-            <Logo size={30} />
-            <span className="font-display text-xl font-semibold tracking-tight text-ink">
-              AegisBrain
-            </span>
-          </div>
-          <span className="rounded-full border border-ice bg-white/85 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-widest text-cobalt shadow-sm">
-            AST Policy Gateway
-          </span>
-        </div>
-
-        <div className="absolute inset-x-6 top-1/2 -translate-y-28 md:inset-x-12 md:-translate-y-32">
-          <div className="mx-auto max-w-3xl">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={quoteIndex}
-                initial={{ opacity: 0, y: 18, filter: "blur(6px)" }}
-                animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -16, filter: "blur(6px)" }}
-                transition={{ duration: 0.34, ease: EASE_OUT_EXPO }}
-              >
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cobalt">
-                  {activeQuote.tag}
-                </p>
-                <p className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl md:text-4xl">
-                  &ldquo;{activeQuote.quote}&rdquo;
-                </p>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <div className="absolute left-6 right-6 top-1/2 h-[2px] bg-ice md:left-12 md:right-12">
-          <div
-            className="h-full origin-left bg-cobalt shadow-[0_0_16px_rgba(43,84,240,0.6)]"
-            style={{ transform: `scaleX(${n / 100})` }}
-          />
-        </div>
-
-        <div className="absolute bottom-8 left-6 right-6 flex items-end justify-between md:bottom-12 md:left-12 md:right-12">
-          <div className="max-w-xs">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={activeQuote.sub}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.25 }}
-                className="text-sm font-medium text-muted md:text-base"
-              >
-                {activeQuote.sub}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-          <p
-            className="font-display font-semibold leading-none tracking-tight text-ink"
-            style={{ fontSize: "clamp(5rem, 16vw, 12rem)", fontVariantNumeric: "tabular-nums" }}
-          >
-            {String(n).padStart(2, "0")}
-            <span className="text-cobalt">%</span>
-          </p>
-        </div>
-      </motion.div>
-    </div>
   );
 }
 
@@ -1248,15 +3104,16 @@ function ManagerAuthStage({
       <motion.div
         initial={{ opacity: 0, y: 32 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.65, ease: EASE_OUT_EXPO }}
+        transition={{ duration: 0.65, ease: EASE }}
         className="grid gap-10 lg:grid-cols-12 lg:items-center"
       >
         <div className="lg:col-span-5">
-          <span className="inline-flex items-center gap-2 rounded-full border border-ice bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-cobalt shadow-sm">
-            <ShieldCheck className="h-3.5 w-3.5" /> Step 1 of 3 · Live Manager Verification
-          </span>
-          <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-ink md:text-5xl">
-            Verify the decision-maker.
+          <Eyebrow>Step 1 of 3 · Live Manager Verification</Eyebrow>
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink md:text-5xl">
+            Verify the{" "}
+            <span className={`${serif.className} italic text-cobalt font-normal`}>
+              decision-maker.
+            </span>
           </h1>
           <p className="mt-4 text-base leading-relaxed text-muted">
             Enter the mentor, judge, or manager&apos;s{" "}
@@ -1266,57 +3123,15 @@ function ManagerAuthStage({
             <span className="font-semibold text-cobalt">{FOUNDER_NAME}</span> ({FOUNDER_EMAIL}) will be delivered
             directly to their inbox.
           </p>
-
-          <div className="mt-8 space-y-3.5">
-            {[
-              {
-                icon: Mail,
-                title: "Automated Executive Charter",
-                desc: `Dispatches a formal HTML Governance Charter signed by ${FOUNDER_NAME} (${FOUNDER_PHONE}) with your live Supabase Tenant ID.`,
-              },
-              {
-                icon: Zap,
-                title: "1-Tap Policy Approval Loop",
-                desc: "Every future Slack or WhatsApp policy announcement is routed to this verified identity before AI agents update.",
-              },
-            ].map((item, idx) => {
-              const Icon = item.icon;
-              return (
-                <SpotlightTiltCard
-                  key={item.title}
-                  tiltMax={4}
-                  className="rounded-2xl border border-ice bg-white/90 p-4 shadow-sm"
-                >
-                  <motion.div
-                    initial={{ opacity: 0, x: -16 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.15 + idx * 0.1, duration: 0.45 }}
-                    className="flex items-start gap-3.5"
-                  >
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cobalt/10 text-cobalt">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-display text-sm font-semibold text-ink">{item.title}</p>
-                      <p className="mt-1 text-xs leading-relaxed text-muted">{item.desc}</p>
-                    </div>
-                  </motion.div>
-                </SpotlightTiltCard>
-              );
-            })}
-          </div>
         </div>
 
         <motion.div
           initial={{ opacity: 0, y: 40, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.7, delay: 0.1, ease: EASE_OUT_EXPO }}
+          transition={{ duration: 0.7, delay: 0.1, ease: EASE }}
           className="lg:col-span-7"
         >
-          <SpotlightTiltCard
-            tiltMax={2.5}
-            className="rounded-[36px] border border-ice bg-gradient-to-b from-white via-[#F6FAFF] to-[#EAF2FF] p-8 shadow-[0_36px_80px_-24px_rgba(43,84,240,0.28)] md:p-10"
-          >
+          <div className="rounded-[36px] border border-white/95 bg-gradient-to-b from-white via-[#F6FAFF] to-[#EAF2FF] p-8 shadow-[0_36px_80px_-24px_rgba(43,84,240,0.28)] md:p-10">
             <div className="grid grid-cols-2 rounded-2xl border border-ice bg-mist/70 p-1.5">
               <button
                 type="button"
@@ -1528,7 +3343,7 @@ function ManagerAuthStage({
                 </motion.div>
               )}
             </form>
-          </SpotlightTiltCard>
+          </div>
         </motion.div>
       </motion.div>
     </section>
@@ -1609,7 +3424,7 @@ def apply_customer_discount(discount_pct: int, customer_tier: str, order_id: int
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: EASE_OUT_EXPO }}
+        transition={{ duration: 0.55, ease: EASE }}
         className="mb-10 flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-cobalt/30 bg-gradient-to-r from-white via-[#F4F8FF] to-[#E8F1FF] p-5 shadow-md"
       >
         <div className="flex items-center gap-3.5">
@@ -1622,10 +3437,9 @@ def apply_customer_discount(discount_pct: int, customer_tier: str, order_id: int
             </p>
             <p className="mt-0.5 text-sm font-semibold text-ink">
               Welcome aboard, {manager.fullName} ({manager.companyName}) · Tenant{" "}
-              <HexScrambleText
-                text={manager.tenantId}
-                className="rounded bg-white px-2 py-0.5 font-mono text-xs text-cobalt"
-              />
+              <span className="rounded bg-white px-2 py-0.5 font-mono text-xs text-cobalt">
+                {manager.tenantId}
+              </span>
             </p>
           </div>
         </div>
@@ -1647,12 +3461,7 @@ def apply_customer_discount(discount_pct: int, customer_tier: str, order_id: int
         </div>
       </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: EASE_OUT_EXPO }}
-        className="mx-auto max-w-3xl text-center"
-      >
+      <div className="mx-auto max-w-3xl text-center">
         <span className="inline-flex items-center gap-2 rounded-full border border-ice bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-cobalt shadow-sm">
           <Sparkles className="h-3.5 w-3.5" /> Step 2 of 3 · How AegisBrain Protects{" "}
           {manager.companyName}
@@ -1660,150 +3469,75 @@ def apply_customer_discount(discount_pct: int, customer_tier: str, order_id: int
         <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-ink md:text-5xl">
           From your announcement to every AI agent—in milliseconds.
         </h1>
-        <p className="mt-4 text-base leading-relaxed text-muted md:text-lg">
-          Before opening your live company control room, here is how your social channels, manager verification alerts,
-          and AI agent SDK work together.
-        </p>
-      </motion.div>
+      </div>
 
       <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {FLOW_CARDS.map((card, idx) => {
           const isCurrent = activeNode === idx;
           return (
-            <SpotlightTiltCard
+            <div
               key={card.num}
-              tiltMax={5}
+              onClick={() => setActiveNode(idx)}
               className={`cursor-pointer rounded-[28px] border p-6 transition-all duration-300 ${
                 isCurrent
                   ? "border-cobalt bg-gradient-to-b from-white to-[#EAF2FF] -translate-y-1.5 shadow-[0_28px_60px_-18px_rgba(43,84,240,0.28)]"
                   : "border-ice bg-white/85 hover:border-cobalt/40"
               }`}
             >
-              <div onClick={() => setActiveNode(idx)}>
-                <div className="flex items-center justify-between">
-                  <span className="font-display text-3xl font-semibold text-cobalt">
-                    {card.num}
-                  </span>
-                  <span className="rounded-full bg-mist px-3 py-1 text-[11px] font-semibold text-cobalt">
-                    {card.badge}
-                  </span>
-                </div>
-                <h3 className="mt-4 font-display text-xl font-semibold tracking-tight text-ink">
-                  {card.title}
-                </h3>
-                <p className="mt-2 text-xs leading-relaxed text-muted">{card.desc}</p>
+              <div className="flex items-center justify-between">
+                <span className="font-display text-3xl font-semibold text-cobalt">
+                  {card.num}
+                </span>
+                <span className="rounded-full bg-mist px-3 py-1 text-[11px] font-semibold text-cobalt">
+                  {card.badge}
+                </span>
               </div>
-            </SpotlightTiltCard>
+              <h3 className="mt-4 font-display text-xl font-semibold tracking-tight text-ink">
+                {card.title}
+              </h3>
+              <p className="mt-2 text-xs leading-relaxed text-muted">{card.desc}</p>
+            </div>
           );
         })}
       </div>
 
-      <div className="mt-10 grid gap-8 lg:grid-cols-12">
-        <SpotlightTiltCard
-          tiltMax={3}
-          className="rounded-[32px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md lg:col-span-5"
-        >
+      <div className="mt-10 rounded-[32px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="rounded-full bg-cobalt/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-cobalt">
-            1. Manager Verification Loop
+            Secure AI Agent SDK Establishment
           </span>
-          <h2 className="mt-3 font-display text-2xl font-semibold text-ink">
-            How we verify policy changes with you
-          </h2>
-          <p className="mt-2 text-xs leading-relaxed text-muted">
-            Whenever someone posts a new rule in Slack, WhatsApp, or Gmail, AegisBrain never blindly trusts it:
-          </p>
+          <button
+            type="button"
+            onClick={copyCode}
+            className="inline-flex items-center gap-1.5 rounded-full bg-cobalt px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:brightness-110"
+          >
+            {copiedSdk ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copiedSdk ? "Copied SDK Code" : "Copy SDK Snippet for Engineers"}
+          </button>
+        </div>
 
-          <ol className="mt-5 space-y-3.5 text-xs">
-            <li className="flex items-start gap-3 rounded-2xl border border-ice bg-white p-3.5">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-cobalt font-bold text-white">
-                1
-              </span>
-              <div>
-                <p className="font-semibold text-ink">AegisBrain Grabs the Announcement</p>
-                <p className="mt-0.5 text-muted">
-                  Example: &ldquo;Cap all customer discounts at 3% starting today.&rdquo;
-                </p>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 rounded-2xl border border-ice bg-white p-3.5">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-cobalt font-bold text-white">
-                2
-              </span>
-              <div>
-                <p className="font-semibold text-ink">
-                  Sends Easy Approval Card to Your{" "}
-                  {manager.authMethod === "gmail" ? "Gmail" : "WhatsApp"}
-                </p>
-                <p className="mt-0.5 text-muted">
-                  Sent directly to <strong className="text-ink">{manager.identifier}</strong> in plain English—no code
-                  to read.
-                </p>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 rounded-2xl border border-ice bg-white p-3.5">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-cobalt font-bold text-white">
-                3
-              </span>
-              <div>
-                <p className="font-semibold text-ink">You Tap Approve → All AI Agents Sync</p>
-                <p className="mt-0.5 text-muted">
-                  Every connected agent immediately enforces the 3% cap and auto-corrects any outdated 10% requests.
-                </p>
-              </div>
-            </li>
-          </ol>
-        </SpotlightTiltCard>
+        <pre className="mt-4 overflow-x-auto rounded-2xl border border-ice bg-white p-5 font-mono text-xs leading-relaxed text-ink shadow-inner">
+          {sdkSnippet}
+        </pre>
 
-        <SpotlightTiltCard
-          tiltMax={3}
-          className="flex flex-col justify-between rounded-[32px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md lg:col-span-7"
-        >
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="rounded-full bg-cobalt/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-cobalt">
-                2. Secure AI Agent SDK Establishment
-              </span>
-              <button
-                type="button"
-                onClick={copyCode}
-                className="inline-flex items-center gap-1.5 rounded-full bg-cobalt px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:brightness-110"
-              >
-                {copiedSdk ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copiedSdk ? "Copied SDK Code" : "Copy SDK Snippet for Engineers"}
-              </button>
-            </div>
-
-            <h2 className="mt-3 font-display text-2xl font-semibold text-ink">
-              Connect all AI agents once—never hardcode rules again
-            </h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted">
-              Your engineering team drops this lightweight wrapper around your agents. Whenever you approve a new policy
-              on WhatsApp or Gmail, the SDK enforces and auto-corrects agent outputs in under 1 millisecond:
-            </p>
-
-            <pre className="mt-4 overflow-x-auto rounded-2xl border border-ice bg-white p-5 font-mono text-xs leading-relaxed text-ink shadow-inner">
-              {sdkSnippet}
-            </pre>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-ice pt-5">
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <CheckCircle2 className="h-4 w-4 text-allow" />
+            <span>
+              Workspace <strong className="text-ink">{manager.companyName}</strong> is
+              pre-configured and ready.
+            </span>
           </div>
-
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-ice pt-5">
-            <div className="flex items-center gap-2 text-xs text-muted">
-              <CheckCircle2 className="h-4 w-4 text-allow" />
-              <span>
-                Workspace <strong className="text-ink">{manager.companyName}</strong> is pre-configured and ready.
-              </span>
-            </div>
-            <Magnetic>
-              <button
-                type="button"
-                onClick={onContinueToDashboard}
-                className="inline-flex items-center gap-2.5 rounded-full bg-cobalt px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-cobalt/25 transition hover:brightness-110 active:scale-95"
-              >
-                Launch Live Company Dashboard <ArrowRight className="h-4 w-4" />
-              </button>
-            </Magnetic>
-          </div>
-        </SpotlightTiltCard>
+          <Magnetic>
+            <button
+              type="button"
+              onClick={onContinueToDashboard}
+              className="inline-flex items-center gap-2.5 rounded-full bg-cobalt px-8 py-4 text-sm font-semibold text-white shadow-lg shadow-cobalt/25 transition hover:brightness-110 active:scale-95"
+            >
+              Launch Live Company Dashboard <ArrowRight className="h-4 w-4" />
+            </button>
+          </Magnetic>
+        </div>
       </div>
     </section>
   );
@@ -2041,13 +3775,10 @@ function ExecutiveCompanyDashboard({
     <motion.section
       initial={{ opacity: 0, y: 28 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, ease: EASE_OUT_EXPO }}
+      transition={{ duration: 0.6, ease: EASE }}
       className="mx-auto max-w-7xl px-6 py-10 md:py-14"
     >
-      <SpotlightTiltCard
-        tiltMax={1.5}
-        className="rounded-[34px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-[0_32px_75px_-22px_rgba(43,84,240,0.24)] md:p-9"
-      >
+      <div className="rounded-[34px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-[0_32px_75px_-22px_rgba(43,84,240,0.24)] md:p-9">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ice pb-6">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
@@ -2089,35 +3820,7 @@ function ExecutiveCompanyDashboard({
             </button>
           </div>
         </div>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border border-ice bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-muted">Monitored Manager Channels</p>
-            <p className="mt-1 font-display text-xl font-semibold text-ink">
-              Slack · WhatsApp · Gmail
-            </p>
-            <p className="mt-0.5 text-[11px] text-allow">Listening for policy announcements</p>
-          </div>
-          <div className="rounded-2xl border border-ice bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-muted">Active Promotional Discount Cap</p>
-            <p className="mt-1 font-display text-2xl font-semibold text-cobalt">
-              {currentDiscountCap}% Maximum
-            </p>
-            <p className="mt-0.5 text-[11px] text-muted">
-              Outdated agents auto-corrected to {currentDiscountCap}%
-            </p>
-          </div>
-          <div className="rounded-2xl border border-ice bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium text-muted">Manager Approval Delivery</p>
-            <p className="mt-1 truncate font-display text-xl font-semibold text-ink">
-              {manager.identifier}
-            </p>
-            <p className="mt-0.5 text-[11px] text-cobalt">
-              Partnered with {FOUNDER_NAME} ({FOUNDER_PHONE})
-            </p>
-          </div>
-        </div>
-      </SpotlightTiltCard>
+      </div>
 
       <AnimatePresence>
         {justSyncedBanner && (
@@ -2144,68 +3847,53 @@ function ExecutiveCompanyDashboard({
 
       <div className="mt-8 grid gap-8 lg:grid-cols-12">
         <div className="space-y-6 lg:col-span-6">
-          <SpotlightTiltCard
-            tiltMax={2.5}
-            className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <span className="rounded-full bg-cobalt/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-cobalt">
-                Live Channel Monitor
-              </span>
-              <span className="text-xs font-medium text-muted">Real-Time Ingestion</span>
-            </div>
-            <h2 className="mt-3 font-display text-2xl font-semibold text-ink">
+          <div className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md">
+            <h2 className="font-display text-2xl font-semibold text-ink">
               1. Announce a Policy Change
             </h2>
             <p className="mt-1 text-xs leading-relaxed text-muted">
               Post a policy update below. AegisBrain stages it in Supabase and dispatches a real verification alert to{" "}
-              <strong className="text-ink">{manager.identifier}</strong> before updating any AI agent.
+              <strong className="text-ink">{manager.identifier}</strong>.
             </p>
 
             <form onSubmit={handleGrabAnnouncement} className="mt-5 space-y-4">
-              <div>
-                <p className="text-xs font-semibold text-ink">Where was this announced?</p>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      ["Slack #leadership", MessageSquare],
-                      ["WhatsApp Executive Group", MessageCircle],
-                      ["Gmail Policy Thread", Mail],
-                    ] as const
-                  ).map(([label, Icon]) => {
-                    const active = sourcePlatform === label;
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => setSourcePlatform(label)}
-                        className={`flex items-center gap-2 rounded-xl border p-2.5 text-left text-xs font-semibold transition ${
-                          active
-                            ? "border-cobalt bg-white text-cobalt shadow-sm"
-                            : "border-ice bg-white/60 text-muted hover:text-ink"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{label.split(" ")[0]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    ["Slack #leadership", MessageSquare],
+                    ["WhatsApp Executive Group", MessageCircle],
+                    ["Gmail Policy Thread", Mail],
+                  ] as const
+                ).map(([label, Icon]) => {
+                  const active = sourcePlatform === label;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setSourcePlatform(label)}
+                      className={`flex items-center gap-2 rounded-xl border p-2.5 text-left text-xs font-semibold transition ${
+                        active
+                          ? "border-cobalt bg-white text-cobalt shadow-sm"
+                          : "border-ice bg-white/60 text-muted hover:text-ink"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{label.split(" ")[0]}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <label className="block text-xs font-semibold text-ink">
-                Manager Announcement Message
-                <textarea
-                  rows={3}
-                  value={announcementText}
-                  onChange={(e) => setAnnouncementText(e.target.value)}
-                  className="mt-1.5 w-full rounded-2xl border border-ice bg-white p-3.5 text-sm text-ink outline-none focus:border-cobalt"
-                />
-              </label>
+              <textarea
+                rows={3}
+                value={announcementText}
+                onChange={(e) => setAnnouncementText(e.target.value)}
+                className="w-full rounded-2xl border border-ice bg-white p-3.5 text-sm text-ink outline-none focus:border-cobalt"
+              />
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="font-semibold text-muted">Send verification via:</span>
+                  <span className="font-semibold text-muted">Verify via:</span>
                   <button
                     type="button"
                     onClick={() => setNotifyVia("gmail")}
@@ -2232,9 +3920,9 @@ function ExecutiveCompanyDashboard({
 
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-2 rounded-full bg-cobalt px-6 py-3 text-xs font-semibold text-white shadow-md shadow-cobalt/20 transition hover:brightness-110 active:scale-95"
+                  className="inline-flex items-center gap-2 rounded-full bg-cobalt px-6 py-3 text-xs font-semibold text-white shadow-md shadow-cobalt/20 transition hover:brightness-110"
                 >
-                  <Send className="h-3.5 w-3.5" /> Grab Policy &amp; Send for Verification
+                  <Send className="h-3.5 w-3.5" /> Grab Policy &amp; Verify
                 </button>
               </div>
             </form>
@@ -2243,135 +3931,59 @@ function ExecutiveCompanyDashboard({
               {pendingCard && (
                 <motion.div
                   key={pendingCard.id}
-                  initial={{ opacity: 0, y: 28, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -18, scale: 0.96 }}
-                  transition={{ duration: 0.4, ease: EASE_OUT_EXPO }}
-                  className="mt-6 rounded-3xl border-2 border-cobalt bg-white p-5 shadow-[0_20px_50px_rgba(43,84,240,0.18)]"
+                  initial={{ opacity: 0, y: 24 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -16 }}
+                  className="mt-6 rounded-3xl border-2 border-cobalt bg-white p-5 shadow-lg"
                 >
                   <div className="flex items-center justify-between border-b border-ice pb-3">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-cobalt">
-                      <BellRing className="h-4 w-4 animate-bounce" />{" "}
-                      {pendingCard.notifyVia === "gmail" ? "Gmail" : "WhatsApp"} Verification
-                      Dispatched to {pendingCard.managerTarget}
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase text-cobalt">
+                      <BellRing className="h-4 w-4 animate-bounce" /> Verification Sent to{" "}
+                      {pendingCard.managerTarget}
                     </span>
                     <span className="text-[11px] text-muted">{pendingCard.createdAt}</span>
                   </div>
-
-                  <p className="mt-3 text-xs font-medium text-muted">
-                    Detected in <strong className="text-ink">{pendingCard.channel}</strong>:
+                  <p className="mt-3 font-display text-lg font-semibold text-ink">
+                    {pendingCard.plainSummary}
                   </p>
-                  <p className="mt-1 rounded-xl bg-mist/60 p-3 text-xs italic text-ink">
-                    &ldquo;{pendingCard.rawAnnouncement}&rdquo;
-                  </p>
-
-                  <div className="mt-3 rounded-2xl border border-ice bg-[#F5F9FF] p-3.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-cobalt">
-                      Plain-English Rule Ready for Your Approval:
-                    </p>
-                    <p className="mt-1 font-display text-lg font-semibold text-ink">
-                      {pendingCard.plainSummary}
-                    </p>
-                  </div>
-
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => triggerExternalNotification(pendingCard)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-ice bg-white px-3.5 py-2 text-xs font-semibold text-cobalt hover:border-cobalt"
+                      className="rounded-full border border-ice bg-white px-3.5 py-2 text-xs font-semibold text-cobalt hover:border-cobalt"
                     >
                       Open in Real{" "}
                       {pendingCard.notifyVia === "gmail" ? "Gmail" : "WhatsApp"} ↗
                     </button>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPendingCard(null)}
-                        className="rounded-full border border-ice bg-white px-4 py-2 text-xs font-semibold text-muted hover:text-deny"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleManagerApprove}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-cobalt px-5 py-2 text-xs font-semibold text-white shadow-md shadow-cobalt/25 hover:brightness-110"
-                      >
-                        <Check className="h-3.5 w-3.5" /> Approve &amp; Sync to All AI Agents
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleManagerApprove}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-cobalt px-5 py-2 text-xs font-semibold text-white shadow-md"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Approve &amp; Sync to All AI Agents
+                    </button>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
-          </SpotlightTiltCard>
-
-          <SpotlightTiltCard
-            tiltMax={2.5}
-            className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-xl font-semibold text-ink">
-                Live Agent Verification Log ({decisions.length})
-              </h3>
-              <span className="rounded-full bg-mist px-3 py-1 font-mono text-[11px] font-semibold text-cobalt">
-                SHA-256 Verified
-              </span>
-            </div>
-            {decisions.length === 0 ? (
-              <p className="mt-3 text-xs text-muted">
-                Run an agent test on the right to see live millisecond verifications and auto-corrections recorded here.
-              </p>
-            ) : (
-              <div className="mt-4 space-y-2.5">
-                {decisions.slice(0, 4).map((d) => (
-                  <div
-                    key={d.requestId + d.at}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-ice bg-white p-3.5 shadow-sm"
-                  >
-                    <div>
-                      <p className="text-xs font-semibold text-ink">
-                        {d.agent} · <span className="font-mono text-cobalt">{d.action}</span>
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted">
-                        {d.correctionNote ?? d.reason}
-                      </p>
-                    </div>
-                    <span className="shrink-0 font-mono text-xs font-bold text-ink">
-                      {d.ms.toFixed(2)} ms
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SpotlightTiltCard>
+          </div>
         </div>
 
         <div className="space-y-6 lg:col-span-6">
-          <SpotlightTiltCard
-            tiltMax={2.5}
-            className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md"
-          >
+          <div className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md">
             <div className="flex items-center justify-between">
-              <span className="rounded-full bg-cobalt/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-cobalt">
-                Millisecond Agent Guard
-              </span>
+              <h2 className="font-display text-2xl font-semibold text-ink">
+                2. Test AI Agent Auto-Correction
+              </h2>
               <span className="font-mono text-xs font-semibold text-cobalt">
                 Active Cap: {currentDiscountCap}%
               </span>
             </div>
-            <h2 className="mt-3 font-display text-2xl font-semibold text-ink">
-              2. Test AI Agent Auto-Correction
-            </h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted">
-              What happens if an AI agent comes in with an outdated or wrong policy? Test it below: set the discount the
-              agent is trying to give, and watch AegisBrain verify or auto-correct it in milliseconds.
-            </p>
 
             <div className="mt-5 rounded-2xl border border-ice bg-white p-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-ink">
-                  AI Sales Agent attempts to offer discount:
+                  AI Sales Agent attempts discount:
                 </span>
                 <span className="font-display text-2xl font-bold text-cobalt">
                   {simAgentDiscount}% OFF
@@ -2385,18 +3997,13 @@ function ExecutiveCompanyDashboard({
                 onChange={(e) => setSimAgentDiscount(Number(e.target.value))}
                 className="mt-3 w-full accent-[#2B54F0]"
               />
-              <div className="mt-1 flex justify-between text-[11px] text-muted">
-                <span>1% (Safe)</span>
-                <span>Current Cap: {currentDiscountCap}%</span>
-                <span>25% (Outdated / Violation)</span>
-              </div>
             </div>
 
             <button
               type="button"
               onClick={handleRunAgentCorrectionTest}
               disabled={simRunning}
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-cobalt px-6 py-3.5 text-xs font-semibold text-white shadow-md shadow-cobalt/20 transition hover:brightness-110 disabled:opacity-60"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-cobalt px-6 py-3.5 text-xs font-semibold text-white shadow-md"
             >
               <Zap className="h-4 w-4" />
               {simRunning
@@ -2404,86 +4011,22 @@ function ExecutiveCompanyDashboard({
                 : `Run Agent with ${simAgentDiscount}% Discount Against Active ${currentDiscountCap}% Policy`}
             </button>
 
-            <AnimatePresence mode="wait">
-              {simResult && (
-                <motion.div
-                  key={simResult.at}
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -12 }}
-                  transition={{ duration: 0.35, ease: EASE_OUT_EXPO }}
-                  className="mt-5 rounded-2xl border border-ice bg-white p-5 shadow-sm"
-                >
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
-                        simResult.verdict === "ALLOW"
-                          ? "bg-allow/15 text-allow"
-                          : "bg-hold/15 text-cobalt"
-                      }`}
-                    >
-                      {simResult.verdict === "ALLOW" ? (
-                        <>
-                          <CheckCircle2 className="h-4 w-4" /> Policy Verified · Passed Smoothly
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="h-4 w-4" /> Outdated Policy Caught &amp; Auto-Corrected
-                        </>
-                      )}
-                    </span>
-                    <span className="font-mono text-xs font-bold text-ink">
-                      {simResult.ms.toFixed(2)} ms
-                    </span>
-                  </div>
+            {simResult && (
+              <div className="mt-5 rounded-2xl border border-ice bg-white p-5 shadow-sm">
+                <p className="text-xs font-semibold text-cobalt">
+                  Checked in {simResult.ms.toFixed(2)} ms · {simResult.verdict}
+                </p>
+                <p className="mt-2 text-xs text-ink">
+                  {simResult.correctionNote ?? simResult.reason}
+                </p>
+              </div>
+            )}
+          </div>
 
-                  <p className="mt-3 text-xs leading-relaxed text-ink">
-                    {simResult.correctionNote ?? simResult.reason}
-                  </p>
-
-                  {simResult.correctedParams && (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border border-deny/30 bg-deny/5 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-deny">
-                          × Agent Attempted (Outdated)
-                        </p>
-                        <p className="mt-1 font-mono text-sm font-bold text-ink">
-                          discount_pct: {String(simResult.params.discount_pct)}%
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-allow/30 bg-allow/10 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-allow">
-                          ✓ AegisBrain Auto-Corrected Output
-                        </p>
-                        <p className="mt-1 font-mono text-sm font-bold text-ink">
-                          discount_pct: {String(simResult.correctedParams.discount_pct)}%
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-3 flex items-center justify-between border-t border-ice pt-2.5 font-mono text-[10px] text-muted">
-                    <span>SHA-256 SEAL:</span>
-                    <HexScrambleText
-                      text={simResult.auditHash.slice(0, 28)}
-                      className="text-cobalt"
-                    />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </SpotlightTiltCard>
-
-          <SpotlightTiltCard
-            tiltMax={2.5}
-            className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md"
-          >
+          <div className="rounded-[30px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-7 shadow-md">
             <h3 className="font-display text-xl font-semibold text-ink">
-              Active Company Policies ({rules.length})
+              Active Company Policies ({rules.length}) &amp; Recent Checks ({decisions.length})
             </h3>
-            <p className="mt-0.5 text-xs text-muted">
-              Every connected AI agent is currently enforcing these verified rules:
-            </p>
             <div className="mt-4 space-y-2.5">
               {rules.map((r) => (
                 <div
@@ -2502,7 +4045,7 @@ function ExecutiveCompanyDashboard({
                 </div>
               ))}
             </div>
-          </SpotlightTiltCard>
+          </div>
         </div>
       </div>
     </motion.section>
@@ -2510,667 +4053,287 @@ function ExecutiveCompanyDashboard({
 }
 
 /* ------------------------------------------------------------------ */
-/* Public Home Page Components (Playground + AST Tree + Priya Flow)   */
+/* Main Application Root                                              */
 /* ------------------------------------------------------------------ */
 
-function Playground({
-  rules,
-  onResult,
-}: {
-  rules: Rule[];
-  onResult: (d: Decision) => void;
-}) {
-  const [selected, setSelected] = useState(SCENARIOS[0].id);
-  const [running, setRunning] = useState(false);
-  const [decision, setDecision] = useState<Decision | null>(null);
-  const scenario = SCENARIOS.find((s) => s.id === selected) ?? SCENARIOS[0];
-
-  const run = async () => {
-    setRunning(true);
-    setDecision(null);
-    const result = await evaluateGateway(scenario.call, rules);
-    setTimeout(() => {
-      setDecision(result);
-      setRunning(false);
-      onResult(result);
-    }, 220);
-  };
-
-  const ui = decision ? VERDICT_UI[decision.verdict] : null;
-
-  return (
-    <section id="try" className="mx-auto max-w-7xl scroll-mt-24 px-6 py-20">
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div className="max-w-2xl">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-ice bg-white px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-cobalt shadow-sm">
-            <Terminal className="h-3.5 w-3.5" /> Live AST Sandbox
-          </span>
-          <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink md:text-5xl">
-            Try an autonomous agent action
-          </h2>
-          <p className="mt-3 text-lg leading-relaxed text-muted">
-            Select a real agent tool payload below. Watch AegisBrain evaluate the Abstract Syntax Tree in under a
-            millisecond, auto-correct outdated parameters, and seal the SHA-256 audit hash.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-10 grid gap-8 lg:grid-cols-12">
-        <div className="space-y-3 lg:col-span-5">
-          <div role="radiogroup" aria-label="Agent action" className="space-y-2.5">
-            {SCENARIOS.map((s) => {
-              const active = s.id === selected;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => {
-                    setSelected(s.id);
-                    setDecision(null);
-                  }}
-                  className={`group flex w-full items-start justify-between gap-4 rounded-2xl border p-4 text-left transition-all duration-200 ${
-                    active
-                      ? "border-cobalt bg-white shadow-[0_12px_30px_rgba(43,84,240,0.14)] -translate-y-0.5"
-                      : "border-ice bg-white/70 hover:border-cobalt/30 hover:bg-white"
-                  }`}
-                >
-                  <div className="flex items-start gap-3.5">
-                    <span
-                      className={`mt-1.5 h-3 w-3 shrink-0 rounded-full border-2 transition-all ${
-                        active
-                          ? "border-cobalt bg-cobalt shadow-[0_0_10px_rgba(43,84,240,0.5)]"
-                          : "border-ice bg-white"
-                      }`}
-                    />
-                    <span>
-                      <span className="block font-display text-base font-semibold text-ink">
-                        {s.title}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted">
-                        {s.who} · {s.note}
-                      </span>
-                    </span>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-mist px-2.5 py-0.5 text-[10px] font-semibold text-cobalt">
-                    {s.badge}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <p className="mb-2 pt-4 text-xs font-semibold uppercase tracking-wider text-cobalt">
-            Incoming Agent Tool Call Payload
-          </p>
-          <pre className="overflow-x-auto rounded-2xl border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-4 font-mono text-[12px] leading-relaxed text-ink shadow-sm">
-            {JSON.stringify(scenario.call, null, 2)}
-          </pre>
-
-          <Magnetic className="w-full">
-            <button
-              type="button"
-              onClick={run}
-              disabled={running}
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-cobalt px-6 py-4 font-semibold text-white shadow-lg shadow-cobalt/25 transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
-            >
-              {running ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" /> Evaluating AST Policy Nodes...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 fill-white" /> Check this action against Gateway
-                </>
-              )}
-            </button>
-          </Magnetic>
-        </div>
-
-        <div className="lg:col-span-7">
-          <SpotlightTiltCard
-            tiltMax={2}
-            className="flex min-h-[520px] flex-col rounded-[32px] border border-ice bg-gradient-to-b from-white/95 to-[#EDF3FF]/95 p-6 shadow-[0_24px_60px_-18px_rgba(43,84,240,0.22)] md:p-8"
-          >
-            <AnimatePresence mode="wait">
-              {decision && ui ? (
-                <motion.div
-                  key={decision.at}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.28, ease: EASE_OUT_EXPO }}
-                  className="flex flex-1 flex-col"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className={`flex items-center gap-3 ${ui.text}`}>
-                      {decision.verdict === "DENY" && <Lock className="h-7 w-7" />}
-                      {decision.verdict === "HOLD" && <AlertTriangle className="h-7 w-7" />}
-                      {decision.verdict === "ALLOW" && <CheckCircle2 className="h-7 w-7" />}
-                      <p className="font-display text-3xl font-semibold tracking-tight md:text-4xl">
-                        {ui.label}
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-cobalt/20 bg-white px-3.5 py-1 font-mono text-xs font-semibold text-cobalt shadow-sm">
-                      {decision.ms.toFixed(2)} ms · {decision.via}
-                    </span>
-                  </div>
-
-                  <p className="mt-4 max-w-xl text-sm leading-relaxed text-ink md:text-base">
-                    {decision.correctionNote ?? decision.reason}
-                  </p>
-
-                  {/* Live AST Node Execution Strip */}
-                  <div className="mt-5 grid grid-cols-4 gap-2">
-                    {[
-                      ["1. Action AST", scenario.call.action],
-                      ["2. Rule Match", decision.ruleId ?? "default_allow"],
-                      ["3. Verdict", decision.verdict],
-                      ["4. SHA-256 Chain", `${decision.auditHash.slice(0, 8)}...`],
-                    ].map(([stepTitle, stepVal], idx) => (
-                      <motion.div
-                        key={stepTitle}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.06 }}
-                        className="rounded-xl border border-ice bg-white p-2.5 shadow-sm"
-                      >
-                        <p className="text-[10px] font-semibold uppercase text-muted">
-                          {stepTitle}
-                        </p>
-                        <p className="mt-0.5 truncate font-mono text-xs font-bold text-cobalt">
-                          {stepVal}
-                        </p>
-                      </motion.div>
-                    ))}
-                  </div>
-
-                  {decision.correctedParams && (
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border border-deny/25 bg-white p-3.5">
-                        <p className="text-[11px] font-semibold uppercase text-deny">
-                          × Agent Requested (Outdated)
-                        </p>
-                        <pre className="mt-1 font-mono text-xs text-ink">
-                          {JSON.stringify(decision.params, null, 2)}
-                        </pre>
-                      </div>
-                      <div className="rounded-2xl border border-allow/30 bg-white p-3.5">
-                        <p className="text-[11px] font-semibold uppercase text-allow">
-                          ✓ Auto-Corrected by Gateway
-                        </p>
-                        <pre className="mt-1 font-mono text-xs text-ink">
-                          {JSON.stringify(decision.correctedParams, null, 2)}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-auto pt-5">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-cobalt">
-                        Cryptographic Decision Record
-                      </p>
-                      <HexScrambleText
-                        text={`sha256:${decision.auditHash.slice(0, 24)}`}
-                        className="font-mono text-[11px] text-muted"
-                      />
-                    </div>
-                    <pre className="overflow-x-auto rounded-2xl border border-ice bg-white/95 p-4 font-mono text-[12px] leading-relaxed text-ink shadow-inner">
-                      {JSON.stringify(
-                        {
-                          request_id: decision.requestId,
-                          agent: scenario.call.agent,
-                          action: scenario.call.action,
-                          verdict: decision.verdict,
-                          rule: decision.ruleId ?? "default_allow",
-                          checked_in_ms: Number(decision.ms.toFixed(2)),
-                        },
-                        null,
-                        2
-                      )}
-                    </pre>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="idle"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex flex-1 flex-col items-center justify-center text-center"
-                >
-                  <motion.div
-                    animate={{ scale: [1, 1.06, 1] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                    className="grid h-16 w-16 place-items-center rounded-2xl border border-ice bg-mist text-cobalt shadow-sm"
-                  >
-                    <Fingerprint className="h-8 w-8" />
-                  </motion.div>
-                  <p className="mt-5 font-display text-2xl font-semibold text-ink">
-                    AST Gateway Ready for Inspection
-                  </p>
-                  <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted">
-                    Choose an agent scenario on the left, then click{" "}
-                    <strong className="text-ink">Check this action against Gateway</strong>.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </SpotlightTiltCard>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ------------------------------------------------------------------ */
-/* Interactive 5-Step Priya Pipeline Story                            */
+/* Breathtaking 5-Shutter Architectural Vault & Gyroscope Intro       */
 /* ------------------------------------------------------------------ */
 
-const STEPS = [
+const VAULT_STAGES = [
   {
-    title: "A manager decides in Slack",
-    body: "In a channel the company chose. Direct messages are never read.",
+    code: "01 // CHANNEL INGEST",
+    headline: "Decisions happen in",
+    accent: "chat.",
+    status: "MOUNTING SLACK · WHATSAPP · GMAIL LISTENERS",
   },
   {
-    title: "We check who may set it",
-    body: "Only people with the right role can propose that kind of rule.",
+    code: "02 // HUMAN AUTHORITY",
+    headline: "People approve. Code",
+    accent: "enforces.",
+    status: "VERIFYING ROLE SCOPES & SHA-256 HASH CHAIN",
   },
   {
-    title: "AI drafts the rule, nothing more",
-    body: "It cannot lock anything. An unclear message gets a question back.",
-  },
-  {
-    title: "A manager approves it",
-    body: "They verify via Gmail or WhatsApp before locking it into force.",
-  },
-  {
-    title: "The gateway enforces & auto-corrects",
-    body: "Plain code checks every agent action in milliseconds.",
+    code: "03 // RUNTIME FIREWALL",
+    headline: "Every agent checked in",
+    accent: "0.38 ms.",
+    status: "AST ENGINE LOCKED · OPENING GATEWAY VAULT",
   },
 ];
 
-function PinnedFlow({
-  cap,
-  onUpdateCap,
-}: {
-  cap: number;
-  onUpdateCap: (newCap: number) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
-  const [step, setStep] = useState(0);
-  const [mode, setMode] = useState<"idle" | "locked" | "edit" | "ignored">("idle");
+function AegisVaultIntro({ onDone }: { onDone: () => void }) {
+  const [pct, setPct] = useState(0);
+  const [unlocked, setUnlocked] = useState(false);
+  const [splitting, setSplitting] = useState(false);
 
-  useMotionValueEvent(scrollYProgress, "change", (v) => {
-    const next = Math.min(STEPS.length - 1, Math.max(0, Math.floor(v * STEPS.length)));
-    setStep((prev) => (prev === next ? prev : next));
-  });
-
-  const fill = useSpring(scrollYProgress, { stiffness: 100, damping: 26, mass: 0.4 });
-
-  const goToStep = (idx: number) => {
-    setStep(idx);
-    const el = ref.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top + window.scrollY;
-    const scrollable = el.offsetHeight - window.innerHeight;
-    window.scrollTo({
-      top: top + ((idx + 0.1) / STEPS.length) * scrollable,
-      behavior: "smooth",
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const controls = animate(0, 100, {
+      duration: 1.95,
+      ease: [0.62, 0, 0.32, 1],
+      onUpdate: (v) => setPct(Math.round(v)),
+      onComplete: () => {
+        setUnlocked(true);
+        timers.push(setTimeout(() => setSplitting(true), 280));
+        timers.push(setTimeout(onDone, 280 + 880));
+      },
     });
-  };
+    return () => {
+      controls.stop();
+      timers.forEach(clearTimeout);
+    };
+  }, [onDone]);
+
+  const stageIdx = pct < 38 ? 0 : pct < 78 ? 1 : 2;
+  const activeStage = VAULT_STAGES[stageIdx];
+  const circumference = 2 * Math.PI * 108;
+  const dashOffset = circumference - (pct / 100) * circumference;
 
   return (
-    <section id="how" ref={ref} className="relative h-[400vh]">
-      <div className="sticky top-0 flex h-screen items-center">
-        <div className="mx-auto grid w-full max-w-7xl items-center gap-10 px-6 pt-10 lg:grid-cols-12">
-          <div className="lg:col-span-5">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-ice bg-white px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-cobalt shadow-sm">
-              <GitBranch className="h-3.5 w-3.5" /> End-to-End Governance Lifecycle
-            </span>
-            <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-tight text-ink md:text-4xl">
-              From a Slack message to a verified agent
-            </h2>
+    <div
+      className="fixed inset-0 z-[120] select-none overflow-hidden"
+      role="status"
+      aria-label="Opening AegisBrain Gateway"
+    >
+      {/* 5 Staggered Vertical Bluish-White Architectural Shutters */}
+      <div className="pointer-events-none absolute inset-0 grid grid-cols-5">
+        {[0, 1, 2, 3, 4].map((col) => (
+          <motion.div
+            key={col}
+            initial={{ y: "0%" }}
+            animate={{ y: splitting ? (col % 2 === 0 ? "-104%" : "104%") : "0%" }}
+            transition={{
+              duration: 0.82,
+              ease: EASE_DRAMATIC,
+              delay: splitting ? col * 0.055 : 0,
+            }}
+            className="relative h-full w-full border-r border-cobalt/10 bg-gradient-to-b from-[#F8FBFF] via-[#ECF3FF] to-[#DFEAFF] will-change-transform transform-gpu"
+            style={{
+              backgroundImage:
+                "linear-gradient(to right, rgba(43,84,240,0.045) 1px, transparent 1px), linear-gradient(to bottom, rgba(43,84,240,0.045) 1px, transparent 1px)",
+              backgroundSize: "44px 44px",
+            }}
+          >
+            {/* Glowing Cobalt Edge on Shutter Split */}
+            <div className="absolute inset-x-0 bottom-0 h-[3px] bg-cobalt/40 shadow-[0_0_20px_rgba(43,84,240,0.5)]" />
+            <div className="absolute inset-x-0 top-0 h-[3px] bg-cobalt/40 shadow-[0_0_20px_rgba(43,84,240,0.5)]" />
+          </motion.div>
+        ))}
+      </div>
 
-            <div className="relative mt-8 hidden pl-8 lg:block">
-              <div className="absolute bottom-2 left-[7px] top-2 w-px bg-ice" />
-              <motion.div
-                className="absolute bottom-2 left-[7px] top-2 w-px origin-top bg-cobalt"
-                style={{ scaleY: fill }}
-              />
-              <ol className="space-y-5">
-                {STEPS.map((s, i) => {
-                  const active = i === step;
-                  return (
-                    <li
-                      key={s.title}
-                      onClick={() => goToStep(i)}
-                      className="relative cursor-pointer select-none"
-                    >
-                      <span
-                        className={`absolute -left-8 top-1.5 h-3.5 w-3.5 rounded-full border-2 transition-all duration-300 ${
-                          i <= step
-                            ? "border-cobalt bg-cobalt shadow-[0_0_12px_rgba(43,84,240,0.5)]"
-                            : "border-ice bg-white"
-                        }`}
-                      />
-                      <p
-                        className={`font-display text-lg font-semibold transition-opacity duration-300 ${
-                          active
-                            ? "opacity-100 text-ink"
-                            : "opacity-40 text-muted hover:opacity-75"
-                        }`}
-                      >
-                        {s.title}
-                      </p>
-                      <AnimatePresence initial={false}>
-                        {active && (
-                          <motion.p
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                            className="overflow-hidden text-sm text-muted"
-                          >
-                            <span className="block pt-1">{s.body}</span>
-                          </motion.p>
-                        )}
-                      </AnimatePresence>
-                    </li>
-                  );
-                })}
-              </ol>
+      {/* Foreground HUD & Central 3D Cryptographic Gyroscope */}
+      <motion.div
+        className="relative z-10 flex h-full w-full flex-col justify-between p-6 md:p-12"
+        animate={{
+          opacity: splitting ? 0 : 1,
+          scale: splitting ? 1.08 : 1,
+        }}
+        transition={{ duration: 0.42, ease: EASE }}
+      >
+        {/* Top Bar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl border border-white bg-white/90 shadow-sm">
+              <Logo size={24} />
+            </div>
+            <div>
+              <span className="block font-display text-lg font-semibold leading-none tracking-tight text-ink">
+                AegisBrain
+              </span>
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-cobalt">
+                Policy Firewall · v2.4
+              </span>
             </div>
           </div>
 
-          <div className="lg:col-span-7">
-            <SpotlightTiltCard
-              tiltMax={2.5}
-              className="relative overflow-hidden rounded-[32px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-6 shadow-[0_30px_70px_-20px_rgba(43,84,240,0.25)] md:p-8"
-            >
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cobalt/0 via-cobalt to-cobalt/0" />
-              <div className="mb-4 flex items-center justify-between border-b border-ice pb-3">
-                <span className="inline-flex items-center rounded-full bg-mist px-3 py-1 text-xs font-semibold uppercase tracking-wider text-cobalt">
-                  Step {step + 1} of {STEPS.length}
-                </span>
-                <div className="flex items-center gap-2">
-                  {STEPS.map((_, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => goToStep(idx)}
-                      className={`h-2 rounded-full transition-all duration-300 ${
-                        idx === step ? "w-6 bg-cobalt" : "w-2 bg-ice hover:bg-muted"
-                      }`}
-                      aria-label={`Step ${idx + 1}`}
-                    />
-                  ))}
-                </div>
-              </div>
+          <button
+            type="button"
+            onClick={onDone}
+            className="pointer-events-auto rounded-full border border-white bg-white/80 px-4 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-muted shadow-sm transition hover:border-cobalt hover:text-cobalt"
+          >
+            Skip Intro →
+          </button>
+        </div>
 
-              <div className="relative h-[320px]">
-                <AnimatePresence mode="wait">
+        {/* Centerpiece: Triple-Ring Gyroscope + Editorial Kinetic Typography */}
+        <div className="my-auto grid items-center gap-10 lg:grid-cols-12">
+          {/* Left: 3D Gyroscope Vault Seal */}
+          <div className="flex items-center justify-center lg:col-span-5">
+            <div className="relative flex h-64 w-64 items-center justify-center md:h-72 md:w-72">
+              {/* Ambient Cobalt Halo */}
+              <div
+                className="pointer-events-none absolute inset-4 rounded-full opacity-70 blur-2xl"
+                style={{
+                  background:
+                    "radial-gradient(circle, rgba(43,84,240,0.28) 0%, rgba(147,197,253,0.25) 60%, transparent 75%)",
+                }}
+              />
+
+              {/* Shockwave Ring when Unlocked at 100% */}
+              <AnimatePresence>
+                {unlocked && (
                   <motion.div
-                    key={step}
-                    className="flex h-full w-full flex-col justify-between"
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -16 }}
-                    transition={{ duration: 0.26, ease: EASE_OUT_EXPO }}
+                    initial={{ scale: 0.75, opacity: 0.9 }}
+                    animate={{ scale: 1.65, opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.75, ease: "easeOut" }}
+                    className="pointer-events-none absolute inset-0 rounded-full border-2 border-cobalt"
+                  />
+                )}
+              </AnimatePresence>
+
+              {/* Outer Counter-Rotating Telemetry Ring */}
+              <div className="ab-orbit pointer-events-none absolute inset-0 rounded-full border border-dashed border-cobalt/30" />
+
+              {/* SVG Progress & Gyroscope Rings */}
+              <svg
+                viewBox="0 0 260 260"
+                className="relative h-full w-full -rotate-90 transform-gpu"
+              >
+                {/* Base Track */}
+                <circle
+                  cx="130"
+                  cy="130"
+                  r="108"
+                  fill="none"
+                  stroke="#D5E3FC"
+                  strokeWidth="3"
+                />
+                {/* Inner Decorative Orbit */}
+                <circle
+                  cx="130"
+                  cy="130"
+                  r="86"
+                  fill="none"
+                  stroke="#E2ECFC"
+                  strokeWidth="1.5"
+                  strokeDasharray="6 8"
+                />
+                {/* Live Progress Arc */}
+                <circle
+                  cx="130"
+                  cy="130"
+                  r="108"
+                  fill="none"
+                  stroke={unlocked ? "#0F9D6B" : "#2B54F0"}
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={dashOffset}
+                  className="transition-colors duration-300"
+                />
+              </svg>
+
+              {/* Center Levitating Vault Core */}
+              <motion.div
+                animate={{
+                  scale: unlocked ? [1, 1.12, 1.04] : 1,
+                }}
+                transition={{ duration: 0.4, ease: EASE }}
+                className="absolute flex h-32 w-32 flex-col items-center justify-center rounded-[32px] border border-white bg-gradient-to-b from-white via-[#F5F9FF] to-[#E4EEFF] shadow-[0_24px_60px_-12px_rgba(43,84,240,0.38)]"
+              >
+                <Logo size={36} />
+                <span
+                  className={`mt-2 rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest ${
+                    unlocked
+                      ? "bg-allow/15 text-allow"
+                      : "bg-cobalt/10 text-cobalt"
+                  }`}
+                >
+                  {unlocked ? "UNLOCKED" : `${String(pct).padStart(2, "0")}%`}
+                </span>
+              </motion.div>
+            </div>
+          </div>
+
+          {/* Right: Kinetic Stage Switcher */}
+          <div className="text-center lg:col-span-7 lg:text-left">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={stageIdx}
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.32, ease: EASE }}
+              >
+                <span className="inline-flex items-center gap-2 rounded-full border border-white bg-white/90 px-3.5 py-1 font-mono text-xs font-semibold text-cobalt shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-cobalt animate-pulse" />
+                  {activeStage.code}
+                </span>
+
+                <h2
+                  className="mt-4 font-display font-semibold tracking-[-0.035em] text-ink"
+                  style={{ fontSize: "clamp(2.2rem, 5.2vw, 4.4rem)", lineHeight: 1.02 }}
+                >
+                  {activeStage.headline}{" "}
+                  <span
+                    className={`${serif.className} inline-block pr-[0.18em] font-normal italic text-cobalt`}
                   >
-                    {step === 0 && (
-                      <div className="flex h-full flex-col justify-between">
-                        <div>
-                          <p className="flex items-center gap-2 text-sm font-semibold text-cobalt">
-                            <MessageSquare className="h-4 w-4" /> #policy-updates
-                          </p>
-                          <div className="mt-4 flex gap-3.5">
-                            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cobalt font-display text-lg font-semibold text-white shadow-md">
-                              P
-                            </div>
-                            <div className="flex-1">
-                              <p className="text-sm font-semibold text-ink">
-                                Priya{" "}
-                                <span className="font-normal text-muted">
-                                  Finance Director, 9:41 AM
-                                </span>
-                              </p>
-                              <div className="mt-2 max-w-md rounded-2xl rounded-tl-sm border border-ice bg-white p-4 text-[15px] leading-relaxed text-ink shadow-sm">
-                                Margin pressure. From today, discounts are capped at {cap}% until
-                                further notice.
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted">
-                          Channel stream verified via workspace webhook.
-                        </p>
-                      </div>
-                    )}
+                    {activeStage.accent}
+                  </span>
+                </h2>
+              </motion.div>
+            </AnimatePresence>
 
-                    {step === 1 && (
-                      <div className="flex h-full flex-col justify-between">
-                        <div>
-                          <p className="flex items-center gap-2 text-sm font-semibold text-cobalt">
-                            <UserCheck className="h-4 w-4" /> Verified before AI parses the text
-                          </p>
-                          <div className="mt-3 space-y-2.5">
-                            {[
-                              {
-                                who: "Priya",
-                                role: "Finance Director",
-                                may: "Refunds, discounts",
-                                ok: true,
-                                result: "Can propose this rule",
-                              },
-                              {
-                                who: "A new intern",
-                                role: "No policy rights",
-                                may: "Nothing",
-                                ok: false,
-                                result: "Ignored & flagged to manager",
-                              },
-                            ].map((r) => (
-                              <div
-                                key={r.who}
-                                className="flex items-center gap-4 rounded-2xl border border-ice bg-white p-3.5 shadow-sm"
-                              >
-                                {r.ok ? (
-                                  <CheckCircle2 className="h-5 w-5 shrink-0 text-allow" />
-                                ) : (
-                                  <XCircle className="h-5 w-5 shrink-0 text-deny" />
-                                )}
-                                <div className="flex-1">
-                                  <p className="text-sm font-semibold text-ink">
-                                    {r.who}{" "}
-                                    <span className="text-xs font-normal text-muted">
-                                      · {r.role}
-                                    </span>
-                                  </p>
-                                  <p className="text-xs text-muted">
-                                    May configure:{" "}
-                                    <span className="font-medium text-ink">{r.may}</span>
-                                  </p>
-                                </div>
-                                <p
-                                  className={`text-right text-xs font-semibold ${
-                                    r.ok ? "text-allow" : "text-deny"
-                                  }`}
-                                >
-                                  {r.result}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted">
-                          Role permissions checked prior to rule compilation.
-                        </p>
-                      </div>
-                    )}
-
-                    {step === 2 && (
-                      <div className="flex h-full flex-col justify-between">
-                        <div>
-                          <p className="flex items-center gap-2 text-sm font-semibold text-cobalt">
-                            <FileText className="h-4 w-4" /> Structured Rule Draft. Nothing is
-                            active yet.
-                          </p>
-                          <pre className="mt-3 overflow-x-auto rounded-2xl border border-ice bg-white p-3.5 font-mono text-[11.5px] leading-snug text-ink shadow-inner">
-                            {JSON.stringify(
-                              {
-                                type: "policy",
-                                status: "awaiting_manager_verification",
-                                action: "discounts.apply",
-                                max_allowed_pct: cap,
-                                source: { channel: "#policy-updates", author: "priya" },
-                              },
-                              null,
-                              2
-                            )}
-                          </pre>
-                        </div>
-                        <p className="text-xs text-muted">
-                          Dispatched to manager&apos;s Gmail &amp; WhatsApp for sign-off.
-                        </p>
-                      </div>
-                    )}
-
-                    {step === 3 && (
-                      <div className="flex h-full flex-col justify-between">
-                        <div className="rounded-2xl border border-ice bg-white p-4 shadow-sm">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                              Original instruction
-                            </p>
-                            {mode === "locked" && (
-                              <span className="rounded-full bg-allow/15 px-2.5 py-0.5 text-[11px] font-semibold text-allow">
-                                Locked &amp; Synced to Agents
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-1 text-sm font-medium text-ink">
-                            &ldquo;From today, discounts are capped at {cap}%.&rdquo;
-                          </p>
-                          <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">
-                            Compiled Rule Logic
-                          </p>
-                          {mode === "edit" ? (
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <span className="font-display text-lg font-semibold text-ink">
-                                Cap discounts at
-                              </span>
-                              <input
-                                type="number"
-                                min={1}
-                                max={50}
-                                value={cap}
-                                onChange={(e) => onUpdateCap(Number(e.target.value) || 5)}
-                                className="w-16 rounded-lg border border-cobalt bg-white px-2 py-1 font-mono text-sm font-bold text-ink"
-                              />
-                              <span className="font-display text-lg font-semibold text-ink">
-                                %
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setMode("idle")}
-                                className="ml-2 rounded-full bg-cobalt px-3 py-1 text-xs font-semibold text-white"
-                              >
-                                Save
-                              </button>
-                            </div>
-                          ) : (
-                            <p className="mt-1 font-display text-xl font-semibold tracking-tight text-ink">
-                              Auto-correct any discount above {cap}%.
-                            </p>
-                          )}
-                          <p className="mt-2 text-xs font-semibold text-hold">
-                            Verified via Manager Gmail / WhatsApp notification.
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMode("locked");
-                              setTimeout(() => goToStep(4), 450);
-                            }}
-                            className="rounded-full bg-cobalt px-5 py-2 text-sm font-semibold text-white shadow-md shadow-cobalt/25 transition hover:brightness-110 active:scale-95"
-                          >
-                            {mode === "locked" ? "✓ Rule Locked" : "Approve & Lock Rule"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMode("edit")}
-                            className="rounded-full border border-ice bg-white px-4 py-2 text-sm font-medium text-ink transition hover:border-cobalt"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMode("ignored")}
-                            className="rounded-full border border-ice bg-white px-4 py-2 text-sm font-medium text-muted transition hover:bg-mist/50"
-                          >
-                            Ignore
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {step === 4 && (
-                      <div className="flex h-full flex-col justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-cobalt">
-                            Every agent is verified &amp; auto-corrected in milliseconds
-                          </p>
-                          <div className="mt-3 space-y-2.5">
-                            {[
-                              {
-                                ask: "Outdated agent tries 10% off",
-                                verdict: "DENY" as Verdict,
-                                why: `Intercepted in 0.36 ms → Auto-corrected to ${cap}% cap`,
-                              },
-                              {
-                                ask: `Synced agent offers ${cap}% off`,
-                                verdict: "ALLOW" as Verdict,
-                                why: `Matches active ${cap}% policy → Goes through smoothly`,
-                              },
-                            ].map((r) => {
-                              const ui = VERDICT_UI[r.verdict];
-                              return (
-                                <div
-                                  key={r.ask}
-                                  className={`flex items-center justify-between rounded-2xl border p-3.5 shadow-sm ${ui.bg} ${ui.border}`}
-                                >
-                                  <div>
-                                    <p className="text-sm font-semibold text-ink">{r.ask}</p>
-                                    <p className="text-xs text-muted">{r.why}</p>
-                                  </div>
-                                  <p className={`font-display text-sm font-bold ${ui.text}`}>
-                                    {ui.label}
-                                  </p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted">
-                          Sub-millisecond verification with zero outdated agent errors.
-                        </p>
-                      </div>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
+            {/* Progress Bar Strip */}
+            <div className="mx-auto mt-8 max-w-md lg:mx-0">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/90 p-0.5 shadow-inner">
+                <div
+                  className="h-full origin-left rounded-full bg-cobalt transition-transform duration-75"
+                  style={{ transform: `scaleX(${pct / 100})` }}
+                />
               </div>
-            </SpotlightTiltCard>
+              <p className="mt-2.5 font-mono text-[11px] font-semibold tracking-wider text-muted">
+                {unlocked ? "✓ GATEWAY ONLINE · 0.38 MS READY" : activeStage.status}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+
+        {/* Bottom Telemetry & Giant Tabular Counter */}
+        <div className="flex items-end justify-between border-t border-cobalt/10 pt-4">
+          <div className="hidden space-y-1 sm:block">
+            <p className="font-mono text-[11px] uppercase tracking-widest text-cobalt">
+              Deterministic AST Runtime
+            </p>
+            <p className="text-xs text-muted">
+              Zero LLM latency in the enforcement path · Triple SHA-256 Ledger
+            </p>
+          </div>
+
+          <p
+            className="ml-auto font-display font-semibold leading-none tracking-tight text-ink"
+            style={{
+              fontSize: "clamp(4.2rem, 12vw, 9rem)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {String(pct).padStart(2, "0")}
+            <span className={`${serif.className} italic text-cobalt`}>%</span>
+          </p>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -3183,9 +4346,6 @@ export default function AegisBrainApp() {
   const [intro, setIntro] = useState(true);
   const [rules, setRules] = useState<Rule[]>(INITIAL_RULES);
   const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [stopped, setStopped] = useState(0);
-  const [lastMs, setLastMs] = useState<number | null>(null);
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   const [stage, setStage] = useState<
     "home" | "manager-auth" | "integration-guide" | "dashboard"
@@ -3212,8 +4372,6 @@ export default function AegisBrainApp() {
   const [managerProfile, setManagerProfile] = useState<ManagerProfile | null>(null);
   const [legalModal, setLegalModal] = useState<"privacy" | "terms" | "dpa" | null>(null);
 
-  const ready = !intro;
-
   const finishIntro = useCallback(() => {
     setIntro(false);
   }, []);
@@ -3229,40 +4387,26 @@ export default function AegisBrainApp() {
     };
   }, [intro]);
 
-  const transitionToStage = (
-    nextStage: "home" | "manager-auth" | "integration-guide" | "dashboard",
-    title: string,
-    subtitle: string
-  ) => {
-    setCurtain({ active: true, title, subtitle });
-    setTimeout(() => {
-      setStage(nextStage);
-      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-    }, 520);
-    setTimeout(() => {
-      setCurtain((prev) => ({ ...prev, active: false }));
-    }, 1150);
-  };
+  const transitionToStage = useCallback(
+    (
+      nextStage: "home" | "manager-auth" | "integration-guide" | "dashboard",
+      title: string,
+      subtitle: string
+    ) => {
+      setCurtain({ active: true, title, subtitle });
+      setTimeout(() => {
+        setStage(nextStage);
+        window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+      }, 480);
+      setTimeout(() => {
+        setCurtain((prev) => ({ ...prev, active: false }));
+      }, 1050);
+    },
+    []
+  );
 
   const handleDecision = (d: Decision) => {
     setDecisions((prev) => [d, ...prev]);
-    if (d.verdict !== "ALLOW") setStopped((s) => s + 1);
-    setLastMs(d.ms);
-  };
-
-  const handleUpdatePriyaCap = (newCap: number) => {
-    setRules((prev) =>
-      prev.map((r) =>
-        r.id === "promo_cap_v2"
-          ? {
-              ...r,
-              threshold: newCap,
-              summary: `Customer discounts are capped at ${newCap}%`,
-              reason: `Discounts above ${newCap}% are blocked. Auto-correcting agent to ${newCap}% cap.`,
-            }
-          : r
-      )
-    );
   };
 
   const handleApproveNewRule = (newRule: Rule) => {
@@ -3274,13 +4418,13 @@ export default function AegisBrainApp() {
 
   const { scrollYProgress } = useScroll();
   const bar = useSpring(scrollYProgress, { stiffness: 120, damping: 30, mass: 0.3 });
-  const priyaRule = rules.find((r) => r.action === "discounts.apply" && !r.vipOnly);
-  const currentCap = Number(priyaRule?.threshold ?? 5);
 
   return (
     <div className="relative min-h-screen text-ink">
+      <style dangerouslySetInnerHTML={{ __html: HOME_MOTION_CSS }} />
+
       <AnimatePresence>
-        {intro && !reduce && <GateIntro key="intro" onDone={finishIntro} />}
+        {intro && !reduce && <AegisVaultIntro key="vault-intro" onDone={finishIntro} />}
       </AnimatePresence>
 
       <UnfoldingCurtain
@@ -3296,12 +4440,13 @@ export default function AegisBrainApp() {
 
       <LiveBackground reduce={!!reduce} />
 
-      <header className="sticky top-0 z-40 border-b border-ice/80 bg-paper/85 backdrop-blur-xl">
+      {/* Clean, Minimal Editorial Glass Header */}
+      <header className="sticky top-0 z-40 border-b border-white/60 bg-paper/75 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <button
             type="button"
             onClick={() =>
-              transitionToStage("home", "Returning to AegisBrain Overview", "Public Gateway")
+              transitionToStage("home", "Returning to AegisBrain", "Overview")
             }
             className="flex items-center gap-2.5"
           >
@@ -3311,66 +4456,47 @@ export default function AegisBrainApp() {
             </span>
           </button>
 
-          <nav className="hidden items-center gap-7 md:flex">
-            <a
-              href="#product"
-              onClick={() => setStage("home")}
-              className="text-sm font-medium text-muted transition hover:text-ink"
-            >
-              Product
-            </a>
-            <a
-              href="#try"
-              onClick={() => setStage("home")}
-              className="text-sm font-medium text-muted transition hover:text-ink"
-            >
-              Interactive Gateway
-            </a>
-            <a
-              href="#how"
-              onClick={() => setStage("home")}
-              className="text-sm font-medium text-muted transition hover:text-ink"
-            >
-              How it works
-            </a>
-            <a
-              href="#faq"
-              onClick={() => setStage("home")}
-              className="text-sm font-medium text-muted transition hover:text-ink"
-            >
-              FAQ
-            </a>
-            <button
-              type="button"
-              onClick={() =>
-                transitionToStage(
-                  managerProfile ? "dashboard" : "manager-auth",
-                  managerProfile
-                    ? `Opening ${managerProfile.companyName} Control Room`
-                    : "Opening Manager Portal",
-                  "Executive Access"
-                )
-              }
-              className="text-sm font-semibold text-cobalt transition hover:text-ink"
-            >
-              Manager Portal
-            </button>
+          <nav className="hidden items-center gap-8 md:flex">
+            {[
+              ["#product", "Architecture"],
+              ["#how", "How it works"],
+              ["#try", "Live Gateway"],
+              ["#faq", "Questions"],
+            ].map(([href, label]) => (
+              <a
+                key={href}
+                href={href}
+                onClick={() => setStage("home")}
+                className="group relative text-sm font-medium text-muted transition hover:text-ink"
+              >
+                {label}
+                <span className="absolute -bottom-1 left-0 h-[1.5px] w-full origin-left scale-x-0 bg-cobalt transition-transform duration-300 group-hover:scale-x-100" />
+              </a>
+            ))}
           </nav>
 
           <div className="flex items-center gap-3">
-            <Magnetic>
+            <Magnetic strength={0.25}>
               <button
                 type="button"
                 onClick={() =>
                   transitionToStage(
-                    "manager-auth",
-                    "Unfolding Manager Authentication Portal",
-                    "Step 1 of 3"
+                    managerProfile ? "dashboard" : "manager-auth",
+                    managerProfile
+                      ? `Opening ${managerProfile.companyName}`
+                      : "Manager Verification Portal",
+                    "Executive Access"
                   )
                 }
-                className="rounded-full bg-cobalt px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-cobalt/20 transition hover:brightness-110 active:scale-95"
+                className="ab-shine-wrap relative overflow-hidden rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper shadow-sm transition hover:bg-cobalt"
               >
-                {managerProfile ? "Open Dashboard" : "Manager Login / Register"}
+                <span
+                  className="ab-shine absolute inset-y-0 left-0 w-1/3 bg-white/25"
+                  aria-hidden="true"
+                />
+                <span className="relative">
+                  {managerProfile ? "Open Control Room" : "Manager Portal"}
+                </span>
               </button>
             </Magnetic>
           </div>
@@ -3387,7 +4513,7 @@ export default function AegisBrainApp() {
               setManagerProfile(profile);
               transitionToStage(
                 "integration-guide",
-                "Unfolding Visual Integration & SDK Blueprint",
+                "Unfolding Integration & SDK Blueprint",
                 "Step 2 of 3 · Architecture"
               );
             }}
@@ -3422,213 +4548,63 @@ export default function AegisBrainApp() {
               )
             }
             onBackToHome={() =>
-              transitionToStage("home", "Returning to Public Overview", "AegisBrain")
+              transitionToStage("home", "Returning to Overview", "AegisBrain")
             }
           />
         )}
 
         {stage === "home" && (
           <>
-            <LiveTelemetryRibbon
-              activeRulesCount={rules.length}
-              lastMs={lastMs}
-              currentCap={currentCap}
+            <HeroSection
+              onOpenPortal={() =>
+                transitionToStage(
+                  "manager-auth",
+                  "Unfolding Manager Verification Portal",
+                  "Step 1 of 3"
+                )
+              }
             />
 
-            <section className="mx-auto max-w-7xl px-6 pb-16 pt-12 md:pt-20">
-              <h1
-                className="font-display font-semibold tracking-[-0.035em] text-ink"
-                style={{ fontSize: "clamp(2.6rem, 7.4vw, 6rem)", lineHeight: 0.98 }}
-              >
-                <Reveal ready={ready} delay={0.15}>
-                  Your agents follow
-                </Reveal>
-                <Reveal ready={ready} delay={0.27}>
-                  the rules you decided
-                </Reveal>
-                <Reveal ready={ready} delay={0.39}>
-                  today, not last year&apos;s.
-                </Reveal>
-              </h1>
+            <Ticker />
 
-              <motion.p
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: ready ? 1 : 0, y: ready ? 0 : 14 }}
-                transition={{ duration: 0.8, ease: EASE_OUT_EXPO, delay: 0.65 }}
-                className="mt-8 max-w-xl text-lg leading-relaxed text-muted md:text-xl"
-              >
-                AegisBrain grabs policy changes announced in Slack, WhatsApp, and Gmail, verifies them with the manager
-                in one tap, and auto-corrects every AI agent in milliseconds.
-              </motion.p>
+            <BluishOrbitalCarousel />
 
-              <motion.div
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: ready ? 1 : 0, y: ready ? 0 : 14 }}
-                transition={{ duration: 0.8, ease: EASE_OUT_EXPO, delay: 0.8 }}
-                className="mt-8 flex flex-wrap items-center gap-5"
-              >
-                <Magnetic>
-                  <a
-                    href="#try"
-                    className="inline-block rounded-full bg-cobalt px-7 py-3.5 font-semibold text-white shadow-lg shadow-cobalt/25 transition hover:brightness-110 active:scale-95"
-                  >
-                    Try the gateway
-                  </a>
-                </Magnetic>
-                <Magnetic>
-                  <a
-                    href="#contact"
-                    className="inline-block rounded-full border border-ice bg-white/90 px-6 py-3.5 font-semibold text-ink shadow-sm transition hover:border-cobalt"
-                  >
-                    Register Company
-                  </a>
-                </Magnetic>
-                <button
-                  type="button"
-                  onClick={() =>
-                    transitionToStage(
-                      "manager-auth",
-                      "Unfolding Manager Authentication Portal",
-                      "Step 1 of 3"
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 font-semibold text-cobalt underline decoration-cobalt/40 decoration-2 underline-offset-8 hover:decoration-cobalt"
-                >
-                  Manager Login / Portal <ArrowRight className="h-4 w-4" />
-                </button>
-              </motion.div>
+            <StaleRulebook />
 
-              {/* Live SVG Packet & AST Architecture Topology */}
-              <LivePacketTopology currentCap={currentCap} />
-            </section>
+            <Pipeline />
 
-            <section className="mx-auto max-w-7xl px-6">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
-                {[
-                  {
-                    label: "Rules in force",
-                    value: <CountUp to={rules.length} play={ready} />,
-                  },
-                  { label: "Connected channels", value: <CountUp to={3} play={ready} /> },
-                  { label: "Agents auto-corrected", value: <span>{stopped}</span> },
-                  {
-                    label: "Last check",
-                    value: (
-                      <span>{lastMs === null ? "0.38 ms" : `${lastMs.toFixed(2)} ms`}</span>
-                    ),
-                  },
-                ].map((m) => (
-                  <SpotlightTiltCard
-                    key={m.label}
-                    tiltMax={4}
-                    className="rounded-3xl border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-6 shadow-sm transition-transform duration-300 hover:-translate-y-1"
-                  >
-                    <p className="text-sm font-medium text-muted group-hover:text-cobalt">
-                      {m.label}
-                    </p>
-                    <p
-                      className="mt-2 font-display text-4xl font-semibold tracking-tight text-ink md:text-5xl"
-                      style={{ fontVariantNumeric: "tabular-nums" }}
-                    >
-                      {m.value}
-                    </p>
-                  </SpotlightTiltCard>
-                ))}
-              </div>
-            </section>
+            <Anatomy />
 
-            <div id="product" className="scroll-mt-20">
-              <RotatingCards />
-            </div>
+            <DayScrubber />
 
             <Playground rules={rules} onResult={handleDecision} />
 
-            <PinnedFlow cap={currentCap} onUpdateCap={handleUpdatePriyaCap} />
+            <Principles />
 
-            <section id="faq" className="mx-auto max-w-5xl scroll-mt-24 px-6 py-20">
-              <div className="text-center">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-ice bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-cobalt shadow-sm">
-                  Enterprise Assurance
-                </span>
-                <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-ink md:text-5xl">
-                  Frequently Answered Inquiries
+            <FaqSection />
+
+            <FinalCta
+              onOpenPortal={() =>
+                transitionToStage(
+                  "manager-auth",
+                  "Unfolding Manager Verification Portal",
+                  "Step 1 of 3"
+                )
+              }
+            />
+
+            <section id="contact" className="mx-auto max-w-4xl scroll-mt-24 px-6 pb-28 pt-8">
+              <div className="mb-8 text-center">
+                <Eyebrow>Start your pilot</Eyebrow>
+                <h2 className="font-display text-3xl font-semibold tracking-tight text-ink md:text-5xl">
+                  Register your organization &amp; receive your{" "}
+                  <span className={`${serif.className} pr-[0.16em] font-normal italic text-cobalt`}>
+                    charter.
+                  </span>
                 </h2>
               </div>
 
-              <div className="mt-12 space-y-4">
-                {(
-                  faqs as Array<{
-                    q?: string;
-                    question?: string;
-                    a?: string;
-                    answer?: string;
-                  }>
-                ).map((faq, i) => {
-                  const isOpen = openFaq === i;
-                  return (
-                    <div
-                      key={i}
-                      className="overflow-hidden rounded-2xl border border-ice bg-gradient-to-b from-white to-[#EDF3FF]/70 shadow-sm"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setOpenFaq(isOpen ? null : i)}
-                        className="flex w-full items-center justify-between p-6 text-left"
-                      >
-                        <span className="font-display text-lg font-semibold text-ink">
-                          {faq.q ?? faq.question}
-                        </span>
-                        <ChevronDown
-                          className={`h-5 w-5 shrink-0 text-muted transition-transform duration-300 ${
-                            isOpen ? "rotate-180 text-cobalt" : ""
-                          }`}
-                        />
-                      </button>
-                      <AnimatePresence initial={false}>
-                        {isOpen && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.25, ease: EASE_OUT_EXPO }}
-                          >
-                            <div className="border-t border-ice px-6 pb-6 pt-3 text-sm leading-relaxed text-muted">
-                              {faq.a ?? faq.answer}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section id="contact" className="mx-auto max-w-4xl scroll-mt-24 px-6 py-20">
-              <motion.div
-                initial={{ opacity: 0, y: 36 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-80px" }}
-                transition={{ duration: 0.75, ease: EASE_OUT_EXPO }}
-                className="mb-8 text-center"
-              >
-                <span className="inline-flex items-center gap-2 rounded-full border border-ice bg-white px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-cobalt shadow-sm">
-                  <Sparkles className="h-3.5 w-3.5" /> Start Your Organization Setup
-                </span>
-                <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink md:text-5xl">
-                  Register your company &amp; open the Manager Portal
-                </h2>
-                <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed text-muted">
-                  Enter the judge or manager&apos;s details below. The page will unfold into the Verification Portal and
-                  automatically dispatch a personalized Collaboration Charter from{" "}
-                  <strong className="text-ink">{FOUNDER_NAME}</strong>.
-                </p>
-              </motion.div>
-
-              <SpotlightTiltCard
-                tiltMax={2}
-                className="rounded-[32px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-6 shadow-[0_28px_70px_-18px_rgba(43,84,240,0.24)] md:p-10"
-              >
+              <div className="rounded-[32px] border border-white/95 bg-gradient-to-b from-white to-[#EDF3FF] p-6 shadow-[0_28px_70px_-18px_rgba(43,84,240,0.24)] md:p-10">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -3744,7 +4720,7 @@ export default function AegisBrainApp() {
                     </Magnetic>
                   </div>
                 </form>
-              </SpotlightTiltCard>
+              </div>
             </section>
           </>
         )}
@@ -3803,7 +4779,7 @@ export default function AegisBrainApp() {
               initial={{ opacity: 0, y: 32, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
-              transition={{ duration: 0.34, ease: EASE_OUT_EXPO }}
+              transition={{ duration: 0.34, ease: EASE }}
               className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-[32px] border border-ice bg-gradient-to-b from-white to-[#EDF3FF] p-6 shadow-2xl md:p-10"
             >
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ice pb-5">
