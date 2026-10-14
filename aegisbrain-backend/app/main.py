@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import traceback
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(
-    title="AegisBrain Policy Gateway",
-    version="0.4.0",
-)
+app = FastAPI(title="AegisBrain Policy Gateway", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
